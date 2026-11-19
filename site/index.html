@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install BrainOS</title>
+<style>
+  body { font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px 16px; color: #111; background: #fafafa; line-height: 1.5; }
+  h1 { font-size: 26px; margin: 0 0 4px; } .s { color: #666; }
+  ol li { margin: 6px 0; } code { background: #eee; padding: 1px 5px; border-radius: 4px; }
+  esp-web-install-button { --esp-tools-button-color: #06c; --esp-tools-button-text-color: #fff; display: block; margin: 20px 0; }
+</style>
+<script type="module" src="https://unpkg.com/esp-web-tools@10.1.0/dist/web/install-button.js?module"></script>
+</head>
+<body>
+<h1>BrainOS</h1>
+<p class="s">A voice notebook for the Seeed reTerminal Sticky. Version VERSION.</p>
+<ol>
+  <li>Plug the Sticky into this computer with a USB-C cable that carries data.</li>
+  <li>Use Chrome or Edge (Safari and Firefox can't talk to USB).</li>
+  <li>Click Install, pick the board's port, and wait about 3 minutes.</li>
+</ol>
+<esp-web-install-button manifest="manifest.json"><span slot="unsupported">This browser can't flash over USB: use Chrome or Edge on a computer.</span></esp-web-install-button>
+<p class="s">Installing replaces the firmware on the board. Seeed's own firmware comes back any time from their <a href="https://www.seeedstudio.com/sticky/playground/official-firmware/">Playground</a>. Later updates arrive over Wi-Fi from the board's Settings.</p>
+<p class="s">Source and notes: <a href="https://github.com/carcaralivre/brainos">github.com/carcaralivre/brainos</a>. Exported notes are read with the <a href="https://carcaralivre.github.io/brainos-reader/">reader page</a>.</p>
+</body>
+</html>

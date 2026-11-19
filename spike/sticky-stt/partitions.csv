@@ -1,0 +1,10 @@
+# reTerminal Sticky, 32 MB flash. Anything the firmware memory-maps (esp_partition_mmap) must sit
+# in the first 16 MB: on this ESP32-S3 the flash MMU wraps physical addresses at 16 MB (measured:
+# a partition at 0x1210000 read back the bytes at 0x210000). The upper 16 MB are fine for
+# partitions that are read with esp_partition_read (LittleFS, logs), not mapped.
+# Name,     Type, SubType, Offset,    Size
+nvs,        data, nvs,     0x9000,    0x6000
+phy_init,   data, phy,     0xf000,    0x1000
+factory,    app,  factory, 0x10000,   0x200000
+lm,         data, 0x42,    0x210000,  0x200000
+model,      data, 0x40,    0x410000,  0xBF0000

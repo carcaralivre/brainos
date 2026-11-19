@@ -1,240 +1,51 @@
-# Sticky OS: open-source firmware for the Seeed reTerminal Sticky
+# BrainOS
 
-[![Latest release](https://img.shields.io/github/v/release/Sticky-OS/sticky-os)](https://github.com/Sticky-OS/sticky-os/releases/latest)
-[![Build](https://github.com/Sticky-OS/sticky-os/actions/workflows/build.yml/badge.svg)](https://github.com/Sticky-OS/sticky-os/actions/workflows/build.yml)
-[![MIT licence](https://img.shields.io/github/license/Sticky-OS/sticky-os)](LICENSE)
+A voice notebook for the [Seeed reTerminal Sticky](https://www.seeedstudio.com/sticky/), the 3.97" magnetic e-paper board. Hold the button, say the idea, let go: the board keeps the recording and turns it into text through OpenRouter (Whisper) when it has Wi-Fi, in Portuguese or English. The notes live on the board, on a page in your home network (`http://brain.local`), and travel to a phone as QR codes.
 
-Sticky OS is a free, open-source ESP32-S3 e-ink firmware for the [Seeed reTerminal Sticky](https://www.seeedstudio.com/sticky/), the 3.97" magnetic
-touch e-paper board. It turns the board into a small app device: a home
-screen of app icons, a status bar, quick settings, and thirteen apps (clock,
-weather, calendar, notes with voice, timer, photos, quote of the day,
-recipes, an e-reader for the books on a
-microSD card, a folder of games and more), made to be read at a glance from
-across the room. Settings live on the board and are made from a setup app
-in your browser, over USB or Bluetooth; nothing personal is built into the
-firmware.
+Built on [Sticky OS](https://github.com/Sticky-OS/sticky-os) (MIT): its screen, touch and button plumbing, keyboard, settings store and update mechanism. Everything else was removed or rewritten. Not affiliated with Seeed Studio.
 
-> An independent, open-source firmware for the Seeed reTerminal Sticky. Not
-> made by or affiliated with Seeed Studio.
+![Lock screen](docs/shots/lock.png) ![Notes](docs/shots/notes.png) ![Export](docs/shots/export.png)
 
-- **Weather station**: now, five days and each day's hours (Open-Meteo, no key)
-- **E-ink calendar**: Google, iCloud or Outlook through an iCal link; day and week views
-- **Notes and voice notes**: typed or spoken, sorted by AI (your own OpenAI key)
-- **E-reader**: EPUB, MOBI, AZW3 (without DRM), FB2, PDF (as text) and plain text from a microSD card
-- **E-paper photo frame**: photos in four greys, sent from the browser or read from microSD
-- **Clock, timer, quote of the day, recipes, and eight games** (2048, Memory, Quiz and more)
-- **Ten languages**; no account and no cloud; updates over WiFi that roll back if they fail
+## What it does
 
-It runs on the reTerminal Sticky (3.97", 800 x 480, ESP32-S3) only, not on
-Seeed's 7.5" reTerminal E1001 or E1002.
-
-Website and setup app: **<https://sticky-os.space.fast/>**
-Download: **[latest release](https://github.com/Sticky-OS/sticky-os/releases/latest)**, then see [Install](#install)
-The board itself: **<https://www.seeedstudio.com/sticky/>** (Seeed Studio)
-
-<a href="https://www.youtube.com/watch?v=J3zIYAmNVTM"><img src="docs/video-tour.jpg" width="640" alt="Watch the Sticky OS tour on YouTube (1 min 23 s)"></a>
-
-▶ [Watch the 80-second tour](https://www.youtube.com/watch?v=J3zIYAmNVTM) (1:23). Two short ones: [voice notes](https://www.youtube.com/watch?v=5wARjguoKUk) (0:29) and [recipes by voice](https://www.youtube.com/watch?v=XnVlZacf7nQ) (0:37). All videos: [youtube.com/@stickyosapp](https://www.youtube.com/@stickyosapp).
-
-<p>
-  <img src="site/src/shots/home-landscape.png" width="400" alt="The home screen in landscape: the time, the weather, the next event, and app icons">
-  <img src="site/src/shots/calendar-week.png" width="400" alt="The Calendar app in landscape: the event on now, the week, and the agenda">
-</p>
-<p>
-  <img src="site/src/shots/notes.png" width="190" alt="The Notes app: tasks with tick boxes and notes">
-  <img src="site/src/shots/timer.png" width="190" alt="The Timer app counting down">
-  <img src="site/src/shots/quick.png" width="190" alt="Quick settings, pulled down from the status bar">
-  <img src="site/src/shots/keyboard.png" width="190" alt="The on-screen keyboard">
-</p>
-
-## The apps
-
-| App | What it does |
-|---|---|
-| Clock | Large time and date, indoor temperature and humidity |
-| Weather | Now and five days, and any day's hours (Open-Meteo, no key needed) |
-| Calendar | What's on now and next, the week, the agenda (your Google, iCloud or Outlook calendar's iCal link; or your InfluxDB) |
-| Notes | Tasks and notes, typed or spoken; the AI sorts them (needs an OpenAI key) |
-| Timer | A countdown that rings even with sounds off |
-| Photos | Photos sent from the setup app, and JPEGs from a microSD card; double-tap for full screen |
-| Quote | Quote of the Day from ZenQuotes, or the board's own list offline; double-tap for full screen |
-| Books | An e-reader for the books on a microSD card: EPUB, MOBI and AZW3 without DRM, FB2, PDF (as text), plain text and HTML; a library with each book's page (cover, description, chapters, progress), justified serif pages in seven sizes, contents, bookmarks and reading statistics |
-| Recipes | Say or type a dish; the AI writes the recipe (needs an OpenAI key) |
-| Games | 2048, Memory, Maths Quest, Daily maths, Quiz, Adventure, X and O, and Tutor (7th grade geometry lessons, in Romanian and English) |
-| Claude | Your weekly Claude Code usage, from your own MQTT broker |
-| Settings | Language, rotation, sound, sleep, WiFi, which apps show, software update |
-| About | The project's website (with a QR code), source and videos; then firmware, memory, network, battery, sensors |
-
-Everything is described in the [guide](docs/guide.md).
-
-## Languages
-
-The board speaks ten languages: English, Español, Português, Français,
-Deutsch, Italiano, Русский, Türkçe, Polski and Română. Pick one in the setup
-app (its first step) or on the board in **Settings → Language**. It changes
-every word on the screens, the day and month names, the decimal comma, the
-on-screen keyboard (a page of the language's accented letters, or the
-Russian layout with a globe key for the Latin one), and the language the AI
-answers in (notes, recipes, Quiz and Adventure) and listens for (speech to
-text gets the language as a hint).
-
-Text from the internet shows with its accents too: calendar events, notes,
-recipes, quotes and the AI's answers in any of these languages, Latin or
-Cyrillic. The fonts are Adafruit GFX's FreeSans and FreeSerif with a second
-table of 340 letters each (Latin-1, Latin Extended-A, Romanian's ș ț,
-Cyrillic, some punctuation), so a character outside them (Chinese, Arabic,
-emoji) still becomes an ASCII stand-in or nothing.
-
-Still in English for now: the setup app, the built-in quiz questions, the
-built-in adventure story and the offline quotes. Adding a language, or a
-word, is described in [CONTRIBUTING.md](CONTRIBUTING.md#languages);
-corrections from native speakers are very welcome.
+- **Lock screen**: battery, a big clock, the date, the pinned note, how many notes there are.
+- **Notes**: grouped by day. Open one to pin it to the lock screen, edit it on the keyboard, or delete it.
+- **Record**: hold OK anywhere, speak, release. The recording waits in a queue; with Wi-Fi and an OpenRouter key it becomes text in a few seconds.
+- **Wi-Fi window**: the radio stays on for 30 minutes after the last touch (or while recordings wait), then switches off. Any touch brings it back.
+- **brain.local**: a page on your network to paste the OpenRouter key, read, pin, archive and delete notes, download them as Markdown, and change settings.
+- **Export**: a loop of QR codes with the new notes; the [reader page](https://carcaralivre.github.io/brainos-reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
+- **Archive** (notes that were exported, by default), **Settings** on the board (Wi-Fi with a scan and a keyboard, date and time, sound, update, about), **updates over Wi-Fi** from this repository's releases, with rollback.
 
 ## Install
 
-You flash Sticky OS once over USB; after that, updates come over WiFi.
-Flashing replaces the firmware the board shipped with; Seeed's
-[official web flasher](https://www.seeedstudio.com/sticky/playground/official-firmware/) puts it back whenever you like (see
-[going back](docs/development.md#going-back-to-seeeds-firmware)).
+Open the [Install page](https://carcaralivre.github.io/brainos/) in Chrome or Edge with the board on USB. Or by hand, from a [release](https://github.com/carcaralivre/brainos/releases):
 
-1. Download `sticky-os-full.bin` (and `sticky-os-full.bin.sha256`) from the
-   [latest release](https://github.com/Sticky-OS/sticky-os/releases/latest).
-2. Install [esptool](https://docs.espressif.com/projects/esptool/) (needs
-   Python 3):
+```bash
+esptool --chip esp32s3 --baud 115200 write-flash 0x0 brainos-full.bin
+```
 
-       pip install esptool            # macOS, Linux
-       py -m pip install esptool      # Windows
+115200 baud only: the board's USB chip drops faster transfers.
 
-3. Plug the board into your computer with a USB-C cable that carries data.
+## Build
 
-   **Use 115200 baud for everything.** The board's USB-serial chip is only
-   reliable at `--baud 115200`; faster speeds (460800, 921600) fail part
-   way through. At that speed, 1 MB takes about 97 seconds.
+arduino-cli, ESP32 core 3.3.11, Adafruit GFX 1.12.6 and BusIO 1.17.4 (see `.github/workflows/build.yml`). Then:
 
-4. **Optional: back up the original firmware.** You don't need a backup to
-   go back: Seeed's [official web flasher](https://www.seeedstudio.com/sticky/playground/official-firmware/) puts the original firmware
-   (v1.2.0) back at any time, from Chrome or Edge over USB. A backup of your
-   own board is only worth it if you want to keep its exact state, such as
-   its pairing with Seeed's app. It reads the whole 32 MB flash, so it takes
-   about **50 minutes**. It contains your WiFi password and the device's cloud
-   tokens, so keep it private.
+```bash
+firmware/build.sh build   # into ~/.cache/brainos-build
+firmware/build.sh         # build and flash over USB
+```
 
-   **macOS / Linux**
+Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/tools/shot.py` saves it as PNG), `stats`, `notes`, `note add <text>`, `wifi`, `wifi add <ssid> <password>`, `time YYYY-MM-DD HH:MM`, `tap x y`, `ok`, `move n`, `lock`, `sleep`, `nettest`.
 
-       esptool --chip esp32s3 --baud 115200 read-flash 0 0x2000000 factory-32mb.bin
+`spike/sticky-stt/` is the on-chip speech-to-text experiment that decided against local transcription ([docs/stt-spike.md](docs/stt-spike.md)). It is not part of the firmware.
 
-   **Windows**
+## Layout
 
-       py -m esptool --chip esp32s3 --port COM5 --baud 115200 read-flash 0 0x2000000 factory-32mb.bin
+| Where | What |
+|---|---|
+| `firmware/brainos/` | the sketch: `board`, `screen`, `touch`, `rtc` (hardware); `notes`, `capture`, `stt`, `net`, `web`, `export`, `ota` (features); `ui`, `keyboard` (screens) |
+| `firmware/build.sh`, `firmware/tools/` | build, flash, screenshots, serial driving |
+| `site/` | the Install page (esp-web-tools), deployed to GitHub Pages by the release workflow |
+| `docs/` | the QR payload spec, the guide, the spike's record, screenshots |
 
-   The file should be exactly 33,554,432 bytes. If it stops part way, run it
-   again.
-
-5. Flash Sticky OS at address 0x0. The file is about 4 MB, so this takes
-   about **3 to 4 minutes**:
-
-   **macOS / Linux**
-
-       shasum -a 256 -c sticky-os-full.bin.sha256      # should say OK
-       esptool --chip esp32s3 --baud 115200 write-flash 0x0 sticky-os-full.bin
-
-   **Windows** (the port is the board's COM port in Device Manager)
-
-       certutil -hashfile sticky-os-full.bin SHA256    # compare with the .sha256 file
-       py -m esptool --chip esp32s3 --port COM5 --baud 115200 write-flash 0x0 sticky-os-full.bin
-
-   esptool finds the port by itself on macOS and Linux; add
-   `--port /dev/ttyACM0` (or `/dev/cu.usbmodem…`) if you have several.
-
-The board restarts into Sticky OS when it's done. esptool puts the board in
-download mode by itself through the USB-C port. If it can't connect or stops
-part way: make sure you used `--baud 115200`, try another cable or USB port,
-close any other program that has the port open (a serial monitor, the setup
-app, a browser tab with ESP Tool), and on Linux add yourself to the
-`dialout` group.
-
-**In the browser instead:** Espressif's
-[ESP Tool](https://espressif.github.io/esptool-js/) runs in Chrome or Edge
-on a computer: set the baud rate to **115200** before *Connect*, pick the
-board's port, set the flash address to `0x0`, choose `sticky-os-full.bin`,
-*Program*.
-
-## Set up
-
-The first start shows a welcome screen with the setup app's address and a
-QR code. Open **<https://sticky-os.space.fast/setup/>** in Chrome or Edge on
-a computer (Chrome on Android for Bluetooth) and connect:
-
-- **over USB:** plug the board in and choose USB, or
-- **over Bluetooth:** on the board, Settings → *Connect to the setup app*;
-  it shows its name and a 6-digit code to type on the page.
-
-The setup app runs in your browser and sends nothing anywhere but to your
-board. In it:
-
-- **WiFi:** the networks the board may join (you can also add one on the
-  board, Settings → WiFi).
-- **Weather:** found from the board's internet address, or a town you set.
-- **Calendar** (optional): paste up to three calendars' secret iCal links,
-  each with a label if you like. The board reads them itself every 30
-  minutes, straight from the calendar service. Where to find the link:
-  - *Google Calendar* (on a computer): Settings → pick the calendar under
-    *Settings for my calendars* → *Integrate calendar* → **Secret address
-    in iCal format**.
-  - *iCloud*: in the Calendar app, the calendar's share button → turn on
-    **Public Calendar** → copy the link (`webcal://…` is fine).
-  - *Outlook / Microsoft 365*: Settings → Calendar → Shared calendars →
-    **Publish a calendar** (*Can view all details*) → copy the ICS link.
-
-  The link is a password to that calendar: the board keeps it and never
-  sends it back. If one leaks, reset it in the calendar service.
-- **OpenAI key** (optional): voice notes, dictation, sorting notes,
-  recipes, and AI quizzes and stories. Everything else works without it.
-  The requests go from the board straight to OpenAI (or a relay of your
-  own), on your OpenAI account.
-- **For power users** (optional): an MQTT broker (Claude usage, telemetry),
-  InfluxDB (calendar events you write there yourself; merged with the
-  links), your own CA, a relay on your network.
-- **Photos:** crop, preview in the board's four greys, and send.
-
-Passwords and keys can be written but never read back. Every setting is
-listed in the [guide](docs/guide.md#the-settings).
-
-## Updates
-
-Settings → **Software update** on the board checks the project's GitHub
-releases (once a day, and on *Check now*) and shows when a new version is
-out; **Install** puts it on, checks it, and restarts. If a new version
-doesn't start properly, the board goes back to the one before.
-
-Installing by itself is **off by default** (releases aren't signed yet,
-see [SECURITY.md](SECURITY.md)); turn on *Install updates automatically* in
-the same place, or `update.auto` in the setup app, if you want it.
-
-## Build from source
-
-You need [arduino-cli](https://arduino.github.io/arduino-cli/), the ESP32
-core 3.3.11 and three libraries:
-
-    arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-    arduino-cli core install esp32:esp32@3.3.11 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-    arduino-cli lib install "Adafruit BusIO@1.17.4" "Adafruit GFX Library@1.12.6" "PubSubClient@2.8"
-
-    ./upload.sh build    # build only, into firmware/sticky-os/build
-    ./upload.sh          # build and flash over USB
-
-[docs/development.md](docs/development.md) has the rest: the hardware, the
-flash layout, how updates and releases work. The setup protocol is in
-[docs/protocol.md](docs/protocol.md); the website and setup app are in
-`site/` (`node test/run.mjs` runs the setup app's tests); the calendar
-parser's tests run on your computer with `firmware/test/ics/run.sh`.
-
-## Contributing, security, licence
-
-- [CONTRIBUTING.md](CONTRIBUTING.md): bugs, ideas, pull requests, the serial
-  test commands.
-- [SECURITY.md](SECURITY.md): how to report a problem privately, and what
-  the board does and doesn't protect.
-- [MIT licence](LICENSE). The screen and touch drivers in
-  `firmware/sticky-os/src/sticky_drivers/` come from Seeed's open-source
-  examples, also MIT.
+MIT, see LICENSE.

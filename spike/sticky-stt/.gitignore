@@ -1,0 +1,7 @@
+build_*/
+images_*/
+sdkconfig_*
+sdkconfig_*.old
+managed_components/
+dependencies.lock
+results/

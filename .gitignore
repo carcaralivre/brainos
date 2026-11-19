@@ -1,14 +1,8 @@
-# Builds
-firmware/sticky-os/build/
-firmware/test/ebook/build/
-site/dist/
-node_modules/
-*.bin
-!firmware/test/ebook/fixtures/*.bin
-
-# Never public: credentials and the author's own seed values
-firmware/sticky-os/secrets.h
-firmware/sticky-os/private_seed.h
-
+firmware/brainos/build/
+spike/sticky-stt/build_*/
+spike/sticky-stt/images_*/
+spike/sticky-stt/sdkconfig_*
+spike/sticky-stt/managed_components/
+spike/sticky-stt/dependencies.lock
+spike/sticky-stt/results/
 .DS_Store
-__pycache__/
