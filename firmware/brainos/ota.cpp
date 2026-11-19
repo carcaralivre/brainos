@@ -262,7 +262,7 @@ static int httpGet(String url, bool allowHttp, bool api, Sink &sink, String &why
     http.setReuse(false);
     http.setTimeout(15000);
     http.setConnectTimeout(10000);
-    http.setUserAgent(String("sticky-os/") + updVersion());
+    http.setUserAgent(String("brainos/") + updVersion());
     if (!http.begin(https ? (WiFiClient &)tls : plain, url)) {
       why = "bad address";
       return -101;
