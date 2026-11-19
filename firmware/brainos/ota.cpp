@@ -498,7 +498,7 @@ bool updCheck() {
   else if (updIsDev()) status = fmt("%s is the latest release (this is a dev build)", tag.c_str());
   else status = "You're up to date";
   Serial.printf("update: latest %s (this is %s), %s %u bytes, checksum %s: %s\n", tag.c_str(), updVersion(),
-                url.length() ? "sticky-os.bin" : "no sticky-os.bin,", (unsigned)size,
+                url.length() ? "brainos.bin" : "no brainos.bin,", (unsigned)size,
                 shaAsset.length() ? "file" : sha.length() ? "digest" : "none", status.c_str());
 
   binUrl = installable ? url : String();
@@ -579,7 +579,7 @@ bool updInstall() {
   Serial.printf("update: installing %s (%u bytes) into %s\n", tag.c_str(), (unsigned)binSize, next->label);
 
   String expect = shaHex, why;
-  if (shaUrl.length()) {  // the release's own checksum file: "<hex>  sticky-os.bin"
+  if (shaUrl.length()) {  // the release's own checksum file: "<hex>  brainos.bin"
     BufferSink file(256);
     int code = httpGet(shaUrl, binHttpOk, false, file, why);
     String text = file.buf ? String(file.buf) : String();

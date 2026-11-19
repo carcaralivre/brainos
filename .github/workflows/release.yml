@@ -1,8 +1,8 @@
 name: Release
 
 # Push a tag like v0.1.0: this builds that version and publishes it as a GitHub Release,
-# which the board's Settings -> Update installs from (brainos.bin), and which the Install
-# page flashes over USB (brainos-full.bin). A tag with a suffix (v0.2.0-rc1) is a pre-release.
+# which the board's Settings -> Update installs from (brainos.bin). The Install page
+# (pages.yml) then picks up brainos-full.bin. A tag with a suffix (v0.2.0-rc1) is a pre-release.
 
 on:
   push:
@@ -75,27 +75,3 @@ jobs:
           KIND=(); if [[ "$GITHUB_REF_NAME" == *-* ]]; then KIND=(--prerelease); fi
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "BrainOS $GITHUB_REF_NAME" "${NOTES[@]}" "${KIND[@]}" --verify-tag \
             dist/brainos.bin dist/brainos.bin.sha256 dist/brainos-full.bin dist/brainos-full.bin.sha256
-
-  pages:
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: release
-          path: dist
-      - name: Assemble the install page with the new firmware
-        run: |
-          mkdir -p public && cp site/index.html site/manifest.json public/ && cp dist/brainos-full.bin public/
-          sed -i "s/VERSION/$GITHUB_REF_NAME/" public/manifest.json public/index.html
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
-        with:
-          path: public
-      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
