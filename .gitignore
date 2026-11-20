@@ -6,3 +6,5 @@ spike/sticky-stt/managed_components/
 spike/sticky-stt/dependencies.lock
 spike/sticky-stt/results/
 .DS_Store
+Arduino/
+esp/
