@@ -145,6 +145,10 @@ static void serialCommand(char *line) {
     Serial.printf("wifi: %s\n", err.length() ? err.c_str() : "saved"); netTouch();
   } else if (!strcmp(line, "wifi")) { Serial.printf("wifi: %s %s %d dBm, wanted %d, %u networks saved, key %s, pending %d\n", netUp() ? "up" : "down", netAddress().c_str(), netSignal(), netWanted(), (unsigned)cfg::wifiNetworks().size(), sttConfigured() ? "set" : "none", notesPending()); }
   else if (!strcmp(line, "nettest")) netTest();
+  else if (!strcmp(line, "wifi seen")) {   // are the saved networks in range? (prints no other names)
+    std::vector<NetSeen> seen; String why; netScan(seen, why);
+    for (auto &n : cfg::wifiNetworks()) { int rssi = 0; for (auto &x : seen) if (x.ssid == n.ssid) rssi = x.rssi; Serial.printf("wifi: %s %s\n", n.ssid.c_str(), rssi ? (String("in range, ") + rssi + " dBm").c_str() : "not in range"); }
+  }
   else if (!strcmp(line, "sensors")) readSensors();
   else if (!strcmp(line, "fs")) { Serial.printf("fs: %u used of %u\n", (unsigned)LittleFS.usedBytes(), (unsigned)LittleFS.totalBytes()); File d = LittleFS.open("/queue"); File f; while ((f = d.openNextFile())) Serial.printf("  %s %u\n", f.name(), (unsigned)f.size()); }
   else Serial.printf("? %s\n", line);

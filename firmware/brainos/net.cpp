@@ -105,7 +105,7 @@ void netTick() {
   if (millis() < backoffUntil) return;
   std::vector<WifiCred> nets = cfg::wifiNetworks();
   if (nets.empty()) { backoffUntil = millis() + 30000; return; }
-  if (tryIndex >= 0 && millis() - tryAt < 10000) return;   // still trying one
+  if (tryIndex >= 0 && millis() - tryAt < 12000) return;   // still trying one
   tryIndex++;
   if (tryIndex >= (int)nets.size()) {
     tryIndex = -1;
@@ -115,6 +115,8 @@ void netTick() {
     return;
   }
   Serial.printf("wifi: trying %s\n", nets[tryIndex].ssid.c_str());
+  WiFi.disconnect(false, true);   // the driver refuses a new config while still trying the last network
+  delay(100);
   lastReason = 0;
   WiFi.begin(nets[tryIndex].ssid.c_str(), nets[tryIndex].pass.c_str());
   tryAt = millis();
