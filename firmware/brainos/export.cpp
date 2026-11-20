@@ -76,8 +76,11 @@ void exportDraw() {
   textCentre(W / 2, qrY + qrPx + 50, F_B18, b);
   snprintf(b, sizeof(b), "%d note%s", (int)ids.size(), ids.size() == 1 ? "" : "s");
   textCentre(W / 2, qrY + qrPx + 86, F_S12, b);
-  textCentre(W / 2, H - 70, F_S12, "Point the reader page at the screen");
-  textCentre(W / 2, H - 40, F_S12, "Press OK when done");
+  textCentre(W / 2, H - 90, F_S12, "Point the reader page at the screen");
+  canvas->fillRoundRect(W / 2 - 100, H - 72, 200, 56, 8, INK);
+  canvas->setTextColor(PAPER);
+  textCentre(W / 2, H - 38, F_B12, "Done");
+  canvas->setTextColor(INK);
 }
 
 void exportTick() {

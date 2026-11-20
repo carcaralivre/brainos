@@ -123,14 +123,32 @@ static void button(int x, int y, int w, int h, const char *label, bool filled) {
 
 struct Row { int noteIndex; int y, h; String day; };  // noteIndex -1: a day header
 static std::vector<Row> rows;
-static const int ROW_H = 68, HEAD_H = 36, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = 56;
+static const int ROW_H = 68, HEAD_H = 36, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = 96;
 
 static std::vector<int> listed(bool archived) {
   auto &all = notesAll();
   std::vector<int> idx;
   for (size_t i = 0; i < all.size(); i++) if (all[i].archived == archived) idx.push_back(i);
-  std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created > all[b].created; });
+  std::sort(idx.begin(), idx.end(), [&](int a, int b) {
+    if (all[a].pinned != all[b].pinned) return all[a].pinned;   // the pinned ones first
+    return all[a].created > all[b].created;
+  });
   return idx;
+}
+
+// Pins a note; with three already pinned, the oldest pin is let go.
+static void pinNote(Note &n) {
+  if (n.pinned) { n.pinned = false; n.modified = time(nullptr); notesSave(); return; }
+  auto &all = notesAll();
+  for (;;) {
+    int count = 0, oldest = -1;
+    for (size_t i = 0; i < all.size(); i++) if (all[i].pinned) { count++; if (oldest < 0 || all[i].modified < all[oldest].modified) oldest = i; }
+    if (count < 3) break;
+    all[oldest].pinned = false;
+  }
+  n.pinned = true;
+  n.modified = time(nullptr);
+  notesSave();
 }
 
 static int listPages(bool archived) {
@@ -140,7 +158,7 @@ static int listPages(bool archived) {
   String lastDay;
   int y = LIST_TOP, pageH = H - LIST_TOP - LIST_BOTTOM_PAD, pages = 1;
   for (int i : idx) {
-    String day = dayLabel(all[i].created);
+    String day = all[i].pinned ? "Pinned" : dayLabel(all[i].created);
     int need = (day != lastDay ? HEAD_H : 0) + ROW_H;
     if (y - LIST_TOP + need > pageH * pages) { pages++; y = LIST_TOP + pageH * (pages - 1); lastDay = ""; }
     if (day != lastDay) { rows.push_back({-1, y, HEAD_H, day}); y += HEAD_H; lastDay = day; }
@@ -203,14 +221,21 @@ static void drawLock() {
   static const char *MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   if (known) snprintf(buf, sizeof(buf), "%s, %s %d", DAYS[tm.tm_wday], MONTHS[tm.tm_mon], tm.tm_mday); else strcpy(buf, "Time not set");
   textCentre(W / 2, 240, F_S12, buf);
-  Note *pinned = notesPinned();
-  if (pinned) {
-    int top = 300, maxLines = (H - 130 - top - 30) / 26;
-    auto lines = wrapLines(F_S12, pinned->text, W - 48 - 56, maxLines);
-    int height = 30 + 26 * max<int>(1, lines.size());
-    canvas->drawRect(24, top, W - 48, height, INK);
-    iconPin(W - 48, top + 10);
-    for (size_t i = 0; i < lines.size(); i++) text(40, top + 34 + i * 26, F_S12, lines[i].c_str());
+  {  // the pinned notes, newest pin first, stacked while they fit
+    auto idx = listed(false);
+    int top = 300, bottom = H - 110;
+    for (int i : idx) {
+      const Note &p = notesAll()[i];
+      if (!p.pinned) break;
+      int maxLines = (bottom - top - 30) / 26;
+      if (maxLines < 1) break;
+      auto lines = wrapLines(F_S12, p.audio.length() ? "(recording, waiting)" : p.text, W - 48 - 56, min(maxLines, 4));
+      int height = 30 + 26 * max<int>(1, lines.size());
+      canvas->drawRect(24, top, W - 48, height, INK);
+      iconPin(W - 48, top + 10);
+      for (size_t k = 0; k < lines.size(); k++) text(40, top + 34 + k * 26, F_S12, lines[k].c_str());
+      top += height + 12;
+    }
   }
   int count = notesCount(false);
   snprintf(buf, sizeof(buf), "%d note%s", count, count == 1 ? "" : "s");
@@ -220,6 +245,9 @@ static void drawLock() {
 static void drawNotes() {
   topBar("Notes", false, true);
   drawList(false);
+  canvas->fillCircle(W - 52, H - 52, 30, INK);   // "+": a new note by typing
+  canvas->fillRect(W - 52 - 12, H - 52 - 2, 25, 5, PAPER);
+  canvas->fillRect(W - 52 - 2, H - 52 - 12, 5, 25, PAPER);
 }
 
 static void drawNote() {
@@ -230,10 +258,11 @@ static void drawNote() {
   String body = n->audio.length() ? String("Recording of ") + n->secs + " s, waiting for Wi-Fi to be transcribed." : n->text;
   auto lines = wrapLines(F_S12, body, W - 48, (H - BAR - 140) / 26);
   for (size_t i = 0; i < lines.size(); i++) text(24, BAR + 60 + i * 26, F_S12, lines[i].c_str());
-  int bw = (W - 48 - 24) / 3, by = H - 76;
+  int bw = (W - 48 - 16) / 2, by = H - 76 - 64;
   button(24, by, bw, 52, n->pinned ? "Unpin" : "Pin", n->pinned);
-  button(24 + bw + 12, by, bw, 52, "Edit", false);
-  button(24 + 2 * (bw + 12), by, bw, 52, deleteArmed ? "Confirm" : "Delete", deleteArmed);
+  button(24 + bw + 16, by, bw, 52, "Edit", false);
+  button(24, by + 64, bw, 52, n->archived ? "Restore" : "Archive", false);
+  button(24 + bw + 16, by + 64, bw, 52, deleteArmed ? "Confirm" : "Delete", deleteArmed);
 }
 
 // ---------------------------------------------------------------- settings
@@ -431,6 +460,7 @@ void uiTap(int x, int y) {
     case SCREEN_NOTES: {
       if (leftIcon(x, y)) { uiGo(SCREEN_LOCK); break; }
       if (rightIcon(x, y)) { uiGo(SCREEN_MENU); break; }
+      if (x > W - 100 && y > H - 100) { keyboardBegin(kb, "", "New note", "Type here", 1000); kbPurpose = 3; kbBack = SCREEN_NOTES; uiGo(SCREEN_KEYBOARD); break; }
       int i = rowAt(y);
       if (i >= 0) { openId = notesAll()[i].id; deleteArmed = false; uiGo(SCREEN_NOTE); }
       break;
@@ -439,22 +469,14 @@ void uiTap(int x, int y) {
       if (leftIcon(x, y)) { uiGo(SCREEN_NOTES); break; }
       Note *n = notesFind(openId);
       if (!n) { uiGo(SCREEN_NOTES); break; }
-      int bw = (W - 48 - 24) / 3, by = H - 76;
-      if (y >= by && y < by + 52) {
-        if (x >= 24 + bw + 12 && x < 24 + 2 * bw + 12) {
-          keyboardBegin(kb, n->text, "Edit the note", "", 1000); kbPurpose = 1; kbBack = SCREEN_NOTE; uiGo(SCREEN_KEYBOARD);
-        } else if (x < 24 + bw) {
-          bool was = n->pinned;
-          for (auto &o : notesAll()) o.pinned = false;  // one pinned note at a time
-          n->pinned = !was;
-          n->modified = time(nullptr);
-          notesSave();
-          deleteArmed = false;
-          uiRender(false);
-        } else if (x >= 24 + 2 * (bw + 12)) {
-          if (!deleteArmed) { deleteArmed = true; uiRender(false); }
-          else { notesRemove(openId); deleteArmed = false; uiGo(SCREEN_NOTES); }
-        }
+      int bw = (W - 48 - 16) / 2, by = H - 76 - 64;
+      bool right = x >= 24 + bw + 16, row1 = y >= by && y < by + 52, row2 = y >= by + 64 && y < by + 116;
+      if (row1 && !right) { pinNote(*n); deleteArmed = false; uiRender(false); }
+      else if (row1 && right) { keyboardBegin(kb, n->text, "Edit the note", "", 1000); kbPurpose = 1; kbBack = SCREEN_NOTE; uiGo(SCREEN_KEYBOARD); }
+      else if (row2 && !right) { n->archived = !n->archived; if (n->archived) n->pinned = false; n->modified = time(nullptr); notesSave(); uiGo(n->archived ? SCREEN_NOTES : SCREEN_ARCHIVE); }
+      else if (row2 && right) {
+        if (!deleteArmed) { deleteArmed = true; uiRender(false); }
+        else { notesRemove(openId); deleteArmed = false; uiGo(SCREEN_NOTES); }
       } else if (deleteArmed) { deleteArmed = false; uiRender(false); }
       break;
     }
@@ -489,6 +511,7 @@ void uiTap(int x, int y) {
     }
     case SCREEN_EXPORT:
       if (leftIcon(x, y)) { exportDone(true); screenGhostReset(); uiGo(SCREEN_MENU); }
+      else if (y >= H - 72 && y < H - 16 && exportParts()) { exportDone(false); screenGhostReset(); screen = SCREEN_NOTES; uiRender(true); }
       break;
     case SCREEN_SETTINGS: {
       if (leftIcon(x, y)) { uiGo(SCREEN_MENU); break; }
@@ -529,6 +552,7 @@ void uiTap(int x, int y) {
       else if (r == KB_CANCEL) uiGo(kbBack);
       else if (r == KB_DONE) {
         if (kbPurpose == 1) { Note *n = notesFind(openId); if (n) { n->text = kb.text; n->modified = time(nullptr); notesSave(); } uiGo(SCREEN_NOTE); }
+        else if (kbPurpose == 3) { String t = kb.text; t.trim(); if (t.length()) notesAdd(t, "", 0); uiGo(SCREEN_NOTES); }
         else if (kbPurpose == 2) { if (kb.text.length() < 8) { kb.note = "A password has at least 8 characters"; uiRender(false); } else joinNetwork(joinSsid, kb.text); }
       }
       break;
@@ -575,19 +599,25 @@ void uiSwipe(int x, int y, int dx, int dy) {
 void uiOk() {
   switch (screen) {
     case SCREEN_LOCK: uiGo(SCREEN_NOTES); break;
-    case SCREEN_SAVED: uiGo(SCREEN_NOTES); break;
-    case SCREEN_NOTE: uiGo(SCREEN_NOTES); break;
-    case SCREEN_MENU: case SCREEN_SETTINGS: uiGo(SCREEN_NOTES); break;
     case SCREEN_EXPORT: exportDone(false); screenGhostReset(); screen = SCREEN_NOTES; uiRender(true); break;
-    case SCREEN_ARCHIVE: uiGo(SCREEN_MENU); break;
-    case SCREEN_WIFI: case SCREEN_TIME: case SCREEN_ABOUT: case SCREEN_UPDATE: uiGo(SCREEN_SETTINGS); break;
-    case SCREEN_WIFI_SCAN: uiGo(SCREEN_WIFI); break;
-    case SCREEN_KEYBOARD: uiGo(kbBack); break;
-    default: break;
+    case SCREEN_KEYBOARD: uiTap(W - 40, H - 40); break;   // the Done key, bottom right
+    case SCREEN_LISTENING: break;
+    default: uiGo(SCREEN_LOCK); break;   // one click locks
   }
 }
 
 void uiMove(int by) {
+  if (screen == SCREEN_NOTE) {
+    Note *n = notesFind(openId);
+    auto idx = listed(n && n->archived);
+    for (size_t k = 0; k < idx.size(); k++)
+      if (notesAll()[idx[k]].id == openId) {
+        int j = (int)k + by;
+        if (j >= 0 && j < (int)idx.size()) { openId = notesAll()[idx[j]].id; deleteArmed = false; uiRender(false); }
+        return;
+      }
+    return;
+  }
   if (screen == SCREEN_NOTES || screen == SCREEN_ARCHIVE) {
     int pages = listPages(screen == SCREEN_ARCHIVE);
     int p = constrain(page + by, 0, pages - 1);

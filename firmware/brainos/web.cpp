@@ -117,7 +117,11 @@ static void handleNote() {
   String d = server.arg("do");
   if (n) {
     if (d == "delete") notesRemove(n->id);
-    else if (d == "pin") { bool was = n->pinned; for (auto &o : notesAll()) o.pinned = false; n->pinned = !was; notesSave(); }
+    else if (d == "pin") {
+      if (n->pinned) n->pinned = false;
+      else { for (;;) { int c = 0, oldest = -1; auto &all = notesAll(); for (size_t i = 0; i < all.size(); i++) if (all[i].pinned) { c++; if (oldest < 0 || all[i].modified < all[oldest].modified) oldest = i; } if (c < 3) break; all[oldest].pinned = false; } n->pinned = true; }
+      n->modified = time(nullptr); notesSave();
+    }
     else if (d == "archive") { n->archived = true; n->pinned = false; notesSave(); }
     else if (d == "restore") { n->archived = false; notesSave(); }
   }
