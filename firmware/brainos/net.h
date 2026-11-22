@@ -1,5 +1,5 @@
-// Wi-Fi: on for a while after the last interaction (wifi.idle_min) or while recordings wait,
-// off otherwise. The clock, brain.local and TLS helpers live here too.
+// Wi-Fi: on while awake (or, with wifi.idle_min set, for a while after the last interaction and
+// while recordings wait). The clock, brain.local and TLS helpers live here too.
 #pragma once
 #include <Arduino.h>
 #include <WiFiClientSecure.h>
@@ -10,8 +10,7 @@ void netTouch();                 // an interaction: keeps the radio on for anoth
 void netTick();                  // call from loop(): joins, times out, switches off
 bool netUp();
 bool netWanted();                // the window is open (or work is pending)
-bool netBusy();                  // a request is in flight: don't switch the radio off
-void netSetBusy(bool);
+void netSetBusy(bool);           // a request is in flight: the radio stays on
 String netName();
 String netAddress();
 int netSignal();
@@ -23,7 +22,6 @@ bool netJoin(const String &ssid, const String &pass, String &why, uint32_t timeo
 
 static const int NET_HANDSHAKE_S = 8;
 static const int NET_CONNECT_MS = 5000;
-static const int NET_ERR_BAD_BODY = -200;
 void netTrust(WiFiClientSecure &tls);
 class HTTPClient;
 bool netReadBody(HTTPClient &http, String &out, size_t max);

@@ -172,7 +172,7 @@ static void keyboardDrawKeys(Keyboard &kb, int top) {
       case K_ACCENTS: keyLabel(cx, cy, F_B12, kb.layer == 3 ? "abc" : "ãç", 7); break;
       case ' ': keyLabel(cx, cy, F_S9, "space", 5); break;
       default: {
-        uint32_t c = kb.shift ? cpUpper(k.code, false) : k.code;
+        uint32_t c = kb.shift ? cpUpper(k.code) : k.code;
         String s; utf8Append(s, c);
         bool lower = c >= 'a' && c <= 'z';
         keyLabel(cx, cy, F_S18, s.c_str(), lower ? 7 : 12);
@@ -184,24 +184,22 @@ static void keyboardDrawKeys(Keyboard &kb, int top) {
 
 // The screen: a centred title (Show/Hide at the right for a password), the field down to the
 // standard Cancel | Done row, then the keys.
-static const int KB_BAR = 56, KB_BTN_H = 52, KB_GAP = 16;
 void keyboardDraw(Keyboard &kb) {
   uiTitle(fitted(F_B12, kb.label, W - 160).c_str());
   if (kb.masked) textRight(W - 24, 38, F_B9, kb.reveal ? "Hide" : "Show");
   int keysAt = H - keyboardHeight();
-  kb.buttonsY = keysAt - KB_GAP - KB_BTN_H;   // the same gap above and below the buttons
-  int fieldY = KB_BAR + 8, fieldBottom = kb.buttonsY - KB_GAP;
+  kb.buttonsY = keysAt - UI_GAP - UI_BTN;   // the same gap above and below the buttons
+  int fieldY = UI_BAR + 8, fieldBottom = kb.buttonsY - UI_GAP;
   if (kb.note.length()) { fieldBottom -= 28; textCentre(W / 2, fieldBottom + 20, F_B9, fitted(F_B9, kb.note, W - 48).c_str()); }   // a message between the field and the buttons
-  keyboardField(kb, 24, fieldY, W - 48, fieldBottom - fieldY);
-  int bw = (W - 48 - KB_GAP) / 2;
-  uiButton(24, kb.buttonsY, bw, KB_BTN_H, "Cancel", false);
-  uiButton(24 + bw + KB_GAP, kb.buttonsY, bw, KB_BTN_H, "Done", false);
+  keyboardField(kb, UI_MARGIN, fieldY, W - 2 * UI_MARGIN, fieldBottom - fieldY);
+  uiButton(UI_MARGIN, kb.buttonsY, UI_HALF, UI_BTN, "Cancel", false);
+  uiButton(UI_MARGIN + UI_HALF + UI_GAP, kb.buttonsY, UI_HALF, UI_BTN, "Done", false);
   keyboardDrawKeys(kb, keysAt);
 }
 
 KbResult keyboardTap(Keyboard &kb, int x, int y) {
-  if (y < KB_BAR && kb.masked && x > W - 120) { kb.reveal = !kb.reveal; return KB_CHANGED; }
-  if (y >= kb.buttonsY - 8 && y < kb.buttonsY + KB_BTN_H + 8) return x < W / 2 ? KB_CANCEL : KB_DONE;
+  if (y < UI_BAR && kb.masked && x > W - 120) { kb.reveal = !kb.reveal; return KB_CHANGED; }
+  if (y >= kb.buttonsY - 8 && y < kb.buttonsY + UI_BTN + 8) return x < W / 2 ? KB_CANCEL : KB_DONE;
   if (y < kb.keysTop - 8) return KB_NONE;
   KeyBox keys[KB_MAX_KEYS];
   int n = keyboardKeys(kb, kb.keysTop, keys), best = -1, bestDist = 1 << 20;
@@ -233,7 +231,7 @@ KbResult keyboardTap(Keyboard &kb, int x, int y) {
     case K_ACCENTS: kb.layer = kb.layer == 3 ? 0 : 3; return KB_CHANGED;
   }
   if (utf8Count(kb.text.c_str()) >= kb.maxLen) return KB_NONE;
-  uint32_t c = kb.shift ? cpUpper(code, false) : code;
+  uint32_t c = kb.shift ? cpUpper(code) : code;
   utf8Append(kb.text, c);
   if (kb.shift == 1) kb.shift = 0;
   if (c == ' ') { if (kb.layer) kb.layer = 0; keyboardAutoShift(kb); }

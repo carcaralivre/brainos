@@ -17,7 +17,7 @@
 extern const char *const VERSION;
 
 Screen screen = SCREEN_LOCK;
-static const int BAR = 56;          // the top bar with the icons and title
+static const int BAR = UI_BAR;
 static int page;                    // the list page shown
 static String openId;               // the note on SCREEN_NOTE
 static bool deleteArmed;            // Delete tapped once
@@ -113,8 +113,13 @@ static void topBar(const char *title, bool back) {
   if (back) iconBack(20, 16);
   uiTitle(title);
 }
-static const int FOOT_Y = 800 - 76;   // the standard button row: 52 px tall, 24 px from the bottom and the sides
-static bool inFooter(int y) { return y >= FOOT_Y && y < FOOT_Y + 52; }
+static const int FOOT_Y = UI_FOOT_Y;
+static bool inFooter(int y) { return y >= FOOT_Y && y < FOOT_Y + UI_BTN; }
+void uiFooter(const char *left, bool leftFilled, const char *right, bool rightFilled) {
+  uiButton(UI_MARGIN, FOOT_Y, UI_HALF, UI_BTN, left, leftFilled);
+  uiButton(UI_MARGIN + UI_HALF + UI_GAP, FOOT_Y, UI_HALF, UI_BTN, right, rightFilled);
+}
+int uiFooterHit(int x, int y) { return !inFooter(y) ? -1 : x < W / 2 ? 0 : 1; }
 void uiButton(int x, int y, int w, int h, const char *label, bool filled) {
   if (filled) { canvas->fillRoundRect(x, y, w, h, 8, INK); canvas->setTextColor(PAPER); }
   else canvas->drawRoundRect(x, y, w, h, 8, INK);
@@ -122,6 +127,10 @@ void uiButton(int x, int y, int w, int h, const char *label, bool filled) {
   canvas->setTextColor(INK);
 }
 static void button(int x, int y, int w, int h, const char *label, bool filled) { uiButton(x, y, w, h, label, filled); }
+
+static String waitingOr(const Note &n) {   // a recording still to be transcribed, or the text
+  return n.audio.length() ? String("Recording, ") + n.secs + " s, waiting for Wi-Fi" : n.text;
+}
 
 // ---------------------------------------------------------------- the list (Notes and Archive)
 
@@ -137,20 +146,6 @@ static std::vector<int> listed(bool archived) {
   return idx;
 }
 
-// Pins a note; with three already pinned, the oldest pin is let go.
-static void pinNote(Note &n) {
-  if (n.pinned) { n.pinned = false; n.modified = time(nullptr); notesSave(); return; }
-  auto &all = notesAll();
-  for (;;) {
-    int count = 0, oldest = -1;
-    for (size_t i = 0; i < all.size(); i++) if (all[i].pinned) { count++; if (oldest < 0 || all[i].modified < all[oldest].modified) oldest = i; }
-    if (count < 3) break;
-    all[oldest].pinned = false;
-  }
-  n.pinned = true;
-  n.modified = time(nullptr);
-  notesSave();
-}
 
 static int listPages(bool archived) {
   rows.clear();
@@ -188,7 +183,7 @@ static void drawList(bool archived) {
       continue;
     }
     const Note &n = all[r.noteIndex];
-    String body = n.audio.length() ? String("Recording, ") + n.secs + " s. Waiting for Wi-Fi to transcribe." : n.text;
+    String body = waitingOr(n);
     auto lines = wrapLines(F_S12, body, W - 48 - 64 - (n.pinned ? 22 : 0), 2);
     for (size_t i = 0; i < lines.size(); i++) text(24, y + 25 + i * 24, F_S12, lines[i].c_str());
     textRight(W - 24, y + 23, F_S9, timeOf(n.created, false).c_str());
@@ -235,7 +230,7 @@ static void drawLock() {
       if (!p.pinned) continue;
       int maxLines = (bottom - top - 30) / 26;
       if (maxLines < 1) break;
-      auto lines = wrapLines(F_S12, p.audio.length() ? "(recording, waiting)" : p.text, W - 48 - 56, min(maxLines, 4));
+      auto lines = wrapLines(F_S12, waitingOr(p), W - 48 - 56, min(maxLines, 4));
       int height = 30 + 26 * max<int>(1, lines.size());
       canvas->drawRoundRect(24, top, W - 48, height, 8, INK);
       iconPin(W - 48, top + 10);
@@ -252,9 +247,7 @@ static void drawLock() {
 static void drawNotes() {
   topBar("Notes", false);
   drawList(false);
-  int bw = (W - 48 - 16) / 2;
-  button(24, FOOT_Y, bw, 52, "New note", false);
-  button(24 + bw + 16, FOOT_Y, bw, 52, "Settings", false);
+  uiFooter("New note", false, "Settings", false);
 }
 
 static void drawNote() {
@@ -262,13 +255,12 @@ static void drawNote() {
   topBar("Note", true);
   if (!n) { textCentre(W / 2, H / 2, F_S12, "Gone"); return; }
   text(24, BAR + 28, F_S9, timeOf(n->created, true).c_str());
-  String body = n->audio.length() ? String("Recording of ") + n->secs + " s, waiting for Wi-Fi to be transcribed." : n->text;
-  int bw = (W - 48 - 16) / 2, by = n->archived ? FOOT_Y : H - 76 - 64;
+  String body = waitingOr(*n);
+  int bw = UI_HALF, by = n->archived ? FOOT_Y : FOOT_Y - UI_BTN - 12;
   auto lines = wrapLines(F_S12, body, W - 48, (by - 16 - (BAR + 60)) / 26);   // the text stops above the buttons
   for (size_t i = 0; i < lines.size(); i++) text(24, BAR + 60 + i * 26, F_S12, lines[i].c_str());
   if (n->archived) {   // an archived note is neither pinned nor edited: Restore | Delete only
-    button(24, FOOT_Y, bw, 52, "Restore", false);
-    button(24 + bw + 16, FOOT_Y, bw, 52, deleteArmed ? "Confirm" : "Delete", deleteArmed);
+    uiFooter("Restore", false, deleteArmed ? "Confirm" : "Delete", deleteArmed);
     return;
   }
   bool waiting = n->audio.length() > 0;   // a recording still to be transcribed is neither edited nor archived
@@ -339,9 +331,7 @@ static void drawAbout() {
   if (u.status.length() && u.checkedMs) { auto w = wrapLines(F_S9, u.status, W - 48, 3); y += 10; for (auto &t : w) { text(24, y, F_S9, t.c_str()); y += 24; } }
   if (u.state == UPD_INSTALLING || updateInstalling()) button(24, FOOT_Y, W - 48, 52, "Installing, don't switch off", true);
   else if (u.available) {
-    int bw = (W - 48 - 16) / 2;
-    button(24, FOOT_Y, bw, 52, u.state == UPD_CHECKING || updateQueued() ? "Checking…" : "Check again", false);
-    button(24 + bw + 16, FOOT_Y, bw, 52, ("Install " + u.latest).c_str(), true);
+    uiFooter(u.state == UPD_CHECKING || updateQueued() ? "Checking…" : "Check again", false, ("Install " + u.latest).c_str(), true);
   } else button(24, FOOT_Y, W - 48, 52, u.state == UPD_CHECKING || updateQueued() ? "Checking…" : "Check for update", false);
 }
 
@@ -363,7 +353,7 @@ static void joinNetwork(const String &ssid, const String &pass) {
     std::vector<WifiCred> nets = cfg::wifiNetworks();
     for (size_t i = 0; i < nets.size(); i++) if (nets[i].ssid == ssid) nets.erase(nets.begin() + i--);
     nets.insert(nets.begin(), {ssid, pass});
-    String err; cfg::setWifiInPlace(nets, err);
+    String err; cfg::setWifi(nets, err);
     wifiMsg = err.length() ? "Connected, but not saved: " + err : "Connected and saved";
     netTouch();
     uiGo(SCREEN_WIFI);
@@ -458,10 +448,10 @@ void uiTap(int x, int y) {
       Note *n = notesFind(openId);
       Screen home = n && n->archived ? SCREEN_ARCHIVE : SCREEN_NOTES;   // back and Delete return to the list the note came from
       if (leftIcon(x, y) || !n) { uiGo(home); break; }
-      int bw = (W - 48 - 16) / 2, by = n->archived ? FOOT_Y : H - 76 - 64;
+      int bw = UI_HALF, by = n->archived ? FOOT_Y : FOOT_Y - UI_BTN - 12;
       bool right = x >= 24 + bw + 16, row1 = !n->archived && y >= by && y < by + 52, row2 = n->archived ? inFooter(y) : y >= by + 64 && y < by + 116;
       bool waiting = n->audio.length() > 0;
-      if (row1 && !right) { pinNote(*n); deleteArmed = false; uiRender(false); }
+      if (row1 && !right) { notesPin(*n); deleteArmed = false; uiRender(false); }
       else if (row1 && right && !waiting) { keyboardBegin(kb, n->text, "Edit note", "", 1000); kbPurpose = 1; kbBack = SCREEN_NOTE; uiGo(SCREEN_KEYBOARD); }
       else if (row2 && !right && !waiting) { n->archived = !n->archived; if (n->archived) n->pinned = false; else n->exported = false; n->modified = time(nullptr); notesSave(); uiGo(n->archived ? SCREEN_NOTES : SCREEN_ARCHIVE); }
       else if (row2 && right) {
@@ -506,7 +496,7 @@ void uiTap(int x, int y) {
       if (inFooter(y)) { startWifiScan(); break; }
       int i = settingsRowAt(y);
       if (i >= 0 && i < (int)nets.size()) {
-        if (forgetArmed == i) { nets.erase(nets.begin() + i); String e; cfg::setWifiInPlace(nets, e); forgetArmed = -1; wifiMsg = "Forgotten"; }
+        if (forgetArmed == i) { nets.erase(nets.begin() + i); String e; cfg::setWifi(nets, e); forgetArmed = -1; wifiMsg = "Forgotten"; }
         else forgetArmed = i;
         uiRender(false);
       } else if (forgetArmed >= 0) { forgetArmed = -1; uiRender(false); }
@@ -525,9 +515,9 @@ void uiTap(int x, int y) {
     case SCREEN_KEYBOARD: keyboardResult(keyboardTap(kb, x, y)); break;
     case SCREEN_ABOUT:
       if (leftIcon(x, y)) uiGo(SCREEN_SETTINGS);
-      else if (inFooter(y) && updState() != UPD_INSTALLING) {
+      else if (inFooter(y) && !updateInstalling()) {
         extern void updateRequest(bool install);
-        updateRequest(updInfo().available && x >= 24 + (W - 48 - 16) / 2 + 16);
+        updateRequest(updInfo().available && uiFooterHit(x, y) == 1);
       }
       break;
     default: break;

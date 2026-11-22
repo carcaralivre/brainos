@@ -15,7 +15,6 @@ int extIndex(uint32_t cp) {
   return -1;
 }
 
-bool drawable(uint32_t cp) { return (cp >= 0x20 && cp < 0x7F) || extIndex(cp) >= 0; }
 
 const char *foldCodePoint(uint32_t cp, char *two) {
   // Latin-1 letters 0xC0..0xFF, their plain letter; Latin Extended-A 0x100..0x17F.
@@ -94,15 +93,9 @@ int utf8Cut(const char *s, int bytes) {
   return ((uint8_t)s[bytes] & 0xC0) == 0x80 ? utf8Back(s, bytes + 1) : bytes;
 }
 
-void utf8Copy(char *dst, const char *src, size_t cap) {
-  if (!cap) return;
-  int n = utf8Cut(src, cap - 1);
-  memcpy(dst, src, n);
-  dst[n] = 0;
-}
 
-uint32_t cpUpper(uint32_t cp, bool turkish) {
-  if (cp >= 'a' && cp <= 'z') return turkish && cp == 'i' ? 0x130 : cp - 32;
+uint32_t cpUpper(uint32_t cp) {
+  if (cp >= 'a' && cp <= 'z') return false && cp == 'i' ? 0x130 : cp - 32;
   if (cp < 0x80) return cp;
   if (cp == 0x131) return 'I';                                        // dotless ı
   if (cp == 0xFF) return 0x178;                                       // ÿ
@@ -115,13 +108,6 @@ uint32_t cpUpper(uint32_t cp, bool turkish) {
   return cp;
 }
 
-String utf8Upper(const String &s, bool turkish) {
-  String out;
-  out.reserve(s.length() + 4);
-  const char *p = s.c_str();
-  for (int i = 0; p[i];) utf8Append(out, cpUpper(utf8Next(p, i), turkish));
-  return out;
-}
 
 String textFold(const String &s) {
   String out;

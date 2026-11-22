@@ -1,4 +1,5 @@
 #include "provjson.h"
+#include "glyphs.h"
 
 namespace pj {
 
@@ -176,16 +177,6 @@ size_t size(const Val &c) {
   return n;
 }
 
-static void utf8(String &out, uint32_t cp) {
-  if (cp < 0x80) out += (char)cp;
-  else if (cp < 0x800) { out += (char)(0xC0 | cp >> 6); out += (char)(0x80 | (cp & 0x3F)); }
-  else if (cp < 0x10000) {
-    out += (char)(0xE0 | cp >> 12); out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F));
-  } else {
-    out += (char)(0xF0 | cp >> 18); out += (char)(0x80 | ((cp >> 12) & 0x3F));
-    out += (char)(0x80 | ((cp >> 6) & 0x3F)); out += (char)(0x80 | (cp & 0x3F));
-  }
-}
 
 static uint32_t hex4(const char *p) {
   char b[5] = {p[0], p[1], p[2], p[3], 0};
@@ -218,7 +209,7 @@ bool str(const Val &v, String &out) {
           }
         }
         if (cp == 0) return false;  // an embedded NUL would cut C strings short
-        utf8(out, cp);
+        utf8Append(out, cp);
         break;
       }
       default: out += e;  // " \ /

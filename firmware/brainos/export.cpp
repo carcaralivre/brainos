@@ -91,7 +91,7 @@ void exportDraw() {
   textCentre(W / 2, qrY + qrPx + 50, F_B18, b);
   snprintf(b, sizeof(b), "%d note%s", (int)ids.size(), ids.size() == 1 ? "" : "s");
   textCentre(W / 2, qrY + qrPx + 86, F_S12, b);
-  uiButton(24, H - 76, W - 48, 52, "Done", false);
+  uiButton(UI_MARGIN, UI_FOOT_Y, W - 2 * UI_MARGIN, UI_BTN, "Done", false);
 }
 
 void exportTick() {

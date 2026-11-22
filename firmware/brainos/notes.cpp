@@ -1,7 +1,6 @@
 #include "notes.h"
 #include <LittleFS.h>
 #include <esp_random.h>
-#include "json.h"
 #include "provjson.h"
 
 static const char *FILE_NAME = "/notes.jsonl";
@@ -65,6 +64,19 @@ void notesSave() {
   for (auto &n : items) f.println(lineOf(n));
   f.close();
   LittleFS.rename("/notes.tmp", FILE_NAME);   // rename replaces the old file in one step: a power cut keeps one or the other
+}
+
+void notesPin(Note &n) {
+  if (n.pinned) { n.pinned = false; n.modified = time(nullptr); notesSave(); return; }
+  for (;;) {
+    int count = 0, oldest = -1;
+    for (size_t i = 0; i < items.size(); i++) if (items[i].pinned) { count++; if (oldest < 0 || items[i].modified < items[oldest].modified) oldest = i; }
+    if (count < 3) break;
+    items[oldest].pinned = false;
+  }
+  n.pinned = true;
+  n.modified = time(nullptr);
+  notesSave();
 }
 
 Note *notesFind(const String &id) {

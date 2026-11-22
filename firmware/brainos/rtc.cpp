@@ -1,4 +1,6 @@
 #include "rtc.h"
+static bool rtcRead(struct tm &t);
+static bool rtcWrite(const struct tm &t);
 #include <Arduino.h>
 #include <sys/time.h>
 #include "board.h"
@@ -20,9 +22,8 @@ bool rtcBegin() {
   return ok;
 }
 
-bool rtcValid() { return valid; }
 
-bool rtcRead(struct tm &t) {
+static bool rtcRead(struct tm &t) {
   uint8_t reg = 0x02, r[7];
   if (!rtc || i2c_master_transmit_receive(rtc, &reg, 1, r, 7, 100) != ESP_OK) return false;
   valid = !(r[0] & 0x80);  // VL: voltage low since the last set
@@ -37,7 +38,7 @@ bool rtcRead(struct tm &t) {
   return true;
 }
 
-bool rtcWrite(const struct tm &t) {
+static bool rtcWrite(const struct tm &t) {
   uint8_t w[8] = {0x02, bcd(t.tm_sec), bcd(t.tm_min), bcd(t.tm_hour), bcd(t.tm_mday), (uint8_t)t.tm_wday, bcd(t.tm_mon + 1), bcd(t.tm_year % 100)};
   if (!rtc || i2c_master_transmit(rtc, w, 8, 100) != ESP_OK) return false;
   valid = true;

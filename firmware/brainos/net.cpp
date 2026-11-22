@@ -24,7 +24,6 @@ static volatile uint8_t lastReason;
 bool netUp() { return WiFi.status() == WL_CONNECTED; }
 bool timeKnown() { return time(nullptr) > 1700000000; }
 void netTouch() { lastTouch = millis(); }
-bool netBusy() { return busy; }
 void netSetBusy(bool b) { busy = b; }
 String netName() { return netUp() ? WiFi.SSID() : String(); }
 String netAddress() { return netUp() ? WiFi.localIP().toString() : String(); }
@@ -68,7 +67,6 @@ static void startClock() {
 static void joined() {
   Serial.printf("wifi: connected to %s, %s, %d dBm\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
   startClock();
-  cfg::confirm();
   if (!mdnsOn) {
     mdnsOn = MDNS.begin("brain");
     if (mdnsOn) MDNS.addService("http", "tcp", 80);
@@ -213,7 +211,6 @@ String netFailText(const char *who, int code) {
     case HTTPC_ERROR_CONNECTION_REFUSED: return String("Couldn't reach ") + who;
     case HTTPC_ERROR_READ_TIMEOUT: return String(who) + " was too slow";
     case HTTPC_ERROR_CONNECTION_LOST: case HTTPC_ERROR_NOT_CONNECTED: return String("The connection to ") + who + " broke";
-    case NET_ERR_BAD_BODY: return String(who) + " sent a broken reply";
     case 401: case 403: return String(who) + " rejected the key";
     case 402: return String(who) + ": no credit";
     case 404: return String(who) + ": not found";

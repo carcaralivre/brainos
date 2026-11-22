@@ -17,7 +17,6 @@
 #include <driver/spi_master.h>
 #include <esp_heap_caps.h>
 #include "pins.h"
-#include "settings.h"
 #include "src/sticky_drivers/epaper_panel.h"
 
 const GFXfont *const F_S9 = &FreeSans9pt7b, *const F_S12 = &FreeSans12pt7b, *const F_S18 = &FreeSans18pt7b;
@@ -203,6 +202,7 @@ bool screenBegin() {
   seeed_epaper_panel_model_t model;
   seeed_epaper_panel_get_model(panel, &model);
   panelName = model == SEEED_EPAPER_PANEL_SSD2677 ? "SSD2677" : "SSD1677";
+  static const int PANEL_WRITE_HZ = 8 * 1000 * 1000;   // SPI clock for sending frames to an SSD1677 (the SSD2677 stays at 2 MHz)
   if (model == SEEED_EPAPER_PANEL_SSD1677 && PANEL_WRITE_HZ > dev.clock_speed_hz) {
     // Known now, and never read again: open it again on a faster clock.
     seeed_epaper_panel_del(panel);

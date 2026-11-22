@@ -29,18 +29,6 @@ static String when(uint32_t t) {
   char b[32]; strftime(b, sizeof(b), "%d %b %Y, %H:%M", &tm); return b;
 }
 
-static void setKey(const char *key, const String &value, String &err) {
-  String j = pj::esc(value);
-  pj::Val v;
-  pj::parse(j.c_str(), j.length(), v);
-  cfg::setInPlace(key, v, err);
-}
-static void setNum(const char *key, long value, String &err) {
-  String j = String(value); pj::Val v; pj::parse(j.c_str(), j.length(), v); cfg::setInPlace(key, v, err);
-}
-static void setFlag(const char *key, bool value, String &err) {
-  String j = value ? "true" : "false"; pj::Val v; pj::parse(j.c_str(), j.length(), v); cfg::setInPlace(key, v, err);
-}
 
 static const char *CSS =
   "body{font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111;background:#fafafa}"
@@ -108,15 +96,15 @@ static void handleRoot() { netTouch(); sendPage(""); }
 static void handleSettings() {
   netTouch();
   String err, msg = "Saved";
-  if (server.arg("key").length()) { setKey("stt.api_key", server.arg("key"), err); if (err.length()) msg = "Key: " + err; }
-  if (!err.length()) setKey("stt.model", server.arg("model"), err);
-  if (!err.length()) setKey("stt.language", server.arg("lang"), err);
-  if (!err.length()) setKey("device.name", server.arg("name"), err);
-  if (!err.length()) { setKey("device.timezone", server.arg("tz"), err); if (!err.length()) { setenv("TZ", server.arg("tz").c_str(), 1); tzset(); } }
-  if (!err.length() && server.arg("idle").length()) setNum("wifi.idle_min", server.arg("idle").toInt(), err);   // an emptied field keeps its value
-  if (!err.length() && server.arg("sleep").length()) setNum("sleep.min", server.arg("sleep").toInt(), err);
-  if (!err.length()) setFlag("export.archive", server.hasArg("archive"), err);
-  if (!err.length()) { setFlag("sound", server.hasArg("sound"), err); soundOn = cfg::flag("sound"); }
+  if (server.arg("key").length()) { cfg::setStr("stt.api_key", server.arg("key"), err); if (err.length()) msg = "Key: " + err; }
+  if (!err.length()) cfg::setStr("stt.model", server.arg("model"), err);
+  if (!err.length()) cfg::setStr("stt.language", server.arg("lang"), err);
+  if (!err.length()) cfg::setStr("device.name", server.arg("name"), err);
+  if (!err.length()) { cfg::setStr("device.timezone", server.arg("tz"), err); if (!err.length()) { setenv("TZ", server.arg("tz").c_str(), 1); tzset(); } }
+  if (!err.length() && server.arg("idle").length()) cfg::setNum("wifi.idle_min", server.arg("idle").toInt(), err);   // an emptied field keeps its value
+  if (!err.length() && server.arg("sleep").length()) cfg::setNum("sleep.min", server.arg("sleep").toInt(), err);
+  if (!err.length()) cfg::setFlag("export.archive", server.hasArg("archive"), err);
+  if (!err.length()) { cfg::setFlag("sound", server.hasArg("sound"), err); soundOn = cfg::flag("sound"); }
   if (err.length()) msg = "Not saved: " + err;
   uiNotesChanged();
   sendPage(msg);
@@ -128,11 +116,7 @@ static void handleNote() {
   String d = server.arg("do");
   if (n) {
     if (d == "delete") notesRemove(n->id);
-    else if (d == "pin" && !n->archived) {
-      if (n->pinned) n->pinned = false;
-      else { for (;;) { int c = 0, oldest = -1; auto &all = notesAll(); for (size_t i = 0; i < all.size(); i++) if (all[i].pinned) { c++; if (oldest < 0 || all[i].modified < all[oldest].modified) oldest = i; } if (c < 3) break; all[oldest].pinned = false; } n->pinned = true; }
-      n->modified = time(nullptr); notesSave();
-    }
+    else if (d == "pin" && !n->archived) notesPin(*n);
     else if (d == "archive" && !n->audio.length()) { n->archived = true; n->pinned = false; notesSave(); }
     else if (d == "restore") { n->archived = false; n->exported = false; notesSave(); }
     else if (d == "edit" && !n->archived) { String t = server.arg("text"); t.trim(); if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); } }

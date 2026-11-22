@@ -7,7 +7,7 @@
 
 Readings now;
 i2c_master_bus_handle_t sensorBus;
-static i2c_master_dev_handle_t sht40, gauge;
+static i2c_master_dev_handle_t gauge;
 bool soundOn = true;
 
 // ---------------------------------------------------------------- buttons
@@ -181,7 +181,6 @@ i2c_master_bus_handle_t i2cBus(i2c_port_num_t port, int sda, int scl) {
 void sensorsBegin() {
   sensorBus = i2cBus(I2C_NUM_1, PIN_SENSOR_SDA, PIN_SENSOR_SCL);
   if (!sensorBus) return;
-  sht40 = i2cDevice(sensorBus, ADDR_SHT40);
   gauge = i2cDevice(sensorBus, ADDR_BQ27220);
 }
 
@@ -195,31 +194,11 @@ static bool gaugeWord(uint8_t reg, int16_t &value) {
 void readSensors() {
   now = {};
   now.usb = digitalRead(PIN_EXTERNAL_POWER);
-  uint8_t measure = 0xFD, raw[6];  // SHT40: high-precision single shot
-  if (sht40 && i2c_master_transmit(sht40, &measure, 1, 100) == ESP_OK) {
-    delay(10);
-    if (i2c_master_receive(sht40, raw, 6, 100) == ESP_OK) {
-      now.climate = true;
-      now.tempC = -45 + 175.0f * (raw[0] << 8 | raw[1]) / 65535;
-      now.humidity = constrain(-6 + 125.0f * (raw[3] << 8 | raw[4]) / 65535, 0.0f, 100.0f);
-    }
-  }
-  int16_t mv, soc, ma;  // BQ27220: Voltage 0x08, Current 0x0C, StateOfCharge 0x2C
-  if (gaugeWord(0x08, mv) && gaugeWord(0x2C, soc) && gaugeWord(0x0C, ma)) {
+  int16_t mv, soc;  // BQ27220: Voltage 0x08, StateOfCharge 0x2C
+  if (gaugeWord(0x08, mv) && gaugeWord(0x2C, soc)) {
     now.battery = true;
     now.millivolts = mv;
     now.percent = soc;
-    now.milliamps = ma;
-    int16_t v;
-    now.remainingMah = gaugeWord(0x10, v) ? v : -1;
-    now.fullMah = gaugeWord(0x12, v) ? v : -1;
-    now.averageMa = gaugeWord(0x14, v) ? v : 0;
-    now.minutesLeft = gaugeWord(0x16, v) ? (uint16_t)v : 65535;
-    now.averageMw = gaugeWord(0x24, v) ? v : 0;
-    now.cycles = gaugeWord(0x2A, v) ? v : -1;
-    now.health = gaugeWord(0x2E, v) ? v : -1;
   }
-  Serial.printf("sensors: climate %s %.1f C %.0f %%, battery %s %d mV %d %% %d mA, usb power %d\n",
-                now.climate ? "ok" : "MISSING", now.tempC, now.humidity,
-                now.battery ? "ok" : "MISSING", now.millivolts, now.percent, now.milliamps, now.usb);
+  Serial.printf("sensors: battery %s %d mV %d %%, usb power %d\n", now.battery ? "ok" : "MISSING", now.millivolts, now.percent, now.usb);
 }

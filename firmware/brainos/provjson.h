@@ -1,10 +1,7 @@
-// A strict little JSON reader for the provisioning protocol's requests.
-//
-// The sketch's json.h finds values by key in a reply it trusts (OpenAI's).
-// Setup requests come from outside (USB, Bluetooth), so this one checks the
-// whole document first (pj::parse fails on anything malformed, nested past
-// MAX_DEPTH, or with trailing bytes) and only then reads it. Values are
-// views into the caller's buffer: no allocation until a string is decoded.
+// A strict little JSON reader and string escaper: notes.jsonl, the transcription reply, the
+// QR payload and the JSON download. pj::parse checks the whole document first (it fails on
+// anything malformed, nested past MAX_DEPTH, or with trailing bytes) and only then reads it.
+// Values are views into the caller's buffer: no allocation until a string is decoded.
 #pragma once
 #include <Arduino.h>
 

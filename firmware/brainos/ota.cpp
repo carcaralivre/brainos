@@ -33,12 +33,7 @@ static const size_t FEED_MAX = 96 * 1024;  // the release JSON, in PSRAM; the as
 // this says the sketch will (updMarkGood).
 extern "C" bool verifyRollbackLater() { return true; }
 
-static SemaphoreHandle_t mtx;
-struct Locked {
-  Locked() { xSemaphoreTake(mtx, portMAX_DELAY); }
-  ~Locked() { xSemaphoreGive(mtx); }
-};
-static UpdInfo info;      // under mtx
+static UpdInfo info;      // read and written on the loop task only
 static bool pending;      // this firmware boots on trial
 // updBegin() runs before the settings (and the language) are loaded, so
 // what it found is put in words when it's read (updInfo).
@@ -57,10 +52,9 @@ static const bool OTA_HTTP = true;
 #else
 static const bool OTA_HTTP = false;
 #endif
-// NVS "sticky_ota": "try" the version an install restarted into, "bad" one
-// that didn't keep running (the bootloader went back): never again by itself.
+// NVS "brainos_ota": "try" is the version an install restarted into, so the next start can
+// say whether it kept running.
 static const char *const NVS_NS = "brainos_ota";
-static String badTag;
 
 const char *updVersion() { return UPD_STR(STICKY_VERSION); }
 
@@ -114,7 +108,7 @@ static int comparePre(const char *a, const char *b) {
 
 // <0, 0, >0 as a is older than, the same as, newer than b. A pre-release
 // is older than its release (v1.0.0-rc1 < v1.0.0). Unparsable sorts lowest.
-int updCompare(const char *a, const char *b) {
+static int updCompare(const char *a, const char *b) {
   long x[3], y[3];
   const char *pa, *pb;
   bool okA = parseVersion(a, x, &pa), okB = parseVersion(b, y, &pb);
@@ -125,13 +119,12 @@ int updCompare(const char *a, const char *b) {
   return comparePre(pa, pb);
 }
 
-bool updIsDev() {
+static bool updIsDev() {
   long v[3];
   return !strncmp(updVersion(), "dev", 3) || !parseVersion(updVersion(), v);
 }
 
 void updBegin() {
-  if (!mtx) mtx = xSemaphoreCreateMutex();
   const esp_partition_t *run = esp_ota_get_running_partition();
   esp_ota_img_states_t st;
   pending = run && esp_ota_get_state_partition(run, &st) == ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY;
@@ -144,23 +137,19 @@ void updBegin() {
   bool failed = false;
   if (p.begin(NVS_NS, false)) {
     tried = p.getString("try", "");
-    badTag = p.getString("bad", "");
     if (tried.length()) {
       p.remove("try");
       if (tried == updVersion()) {
         Serial.printf("update: now running %s, as installed\n", tried.c_str());
         bootNote = 1, bootTag = tried;
       } else {
-        badTag = tried;
-        p.putString("bad", tried);
-        Serial.printf("update: %s didn't keep running: back on %s, and it won't install by itself again\n", tried.c_str(), updVersion());
+        Serial.printf("update: %s didn't keep running: back on %s\n", tried.c_str(), updVersion());
         bootNote = 2, bootTag = tried;
         failed = true;
       }
     }
     p.end();
   }
-  Locked l;
   info.state = UPD_IDLE;
   info.status = "";  // until a check or an install says more: the boot's note (updInfo)
   info.failed = failed;
@@ -176,7 +165,6 @@ void updMarkGood(const char *why) {
 }
 
 UpdInfo updInfo() {
-  Locked l;
   UpdInfo r = info;
   if (!r.status.length() && r.state == UPD_IDLE)
     r.status = bootNote == 1 ? fmt("Updated to %s", bootTag.c_str())
@@ -185,11 +173,8 @@ UpdInfo updInfo() {
   return r;
 }
 
-uint8_t updState() { return info.state; }  // one byte: no lock needed
-int updPercent() { return info.percent; }
 
 static void setStatus(uint8_t state, const String &status, bool failed) {
-  Locked l;
   info.state = state;
   info.status = status;
   info.failed = failed;
@@ -442,13 +427,12 @@ bool updCheck() {
     else if (code == 403 || code == 429) status = (fmt("%s is busy (rate limit): try later", where));
     else status = netFailText(where, code);
     Serial.printf("update: check failed: %s (%s)\n", why.c_str(), status.c_str());
-    Locked l;
     info.state = UPD_IDLE;
     info.status = status;
     info.failed = true;
     info.checkedMs = millis();
     // 404: the feed answered, there is just nothing: forget an older answer.
-    if (code == 404) info.latest = "", info.notes = "", info.available = info.newer = false;
+    if (code == 404) info.latest = "", info.notes = "", info.available = false;
     return code > 0;
   }
   const char *b = json.buf, *end = json.buf + json.len;
@@ -489,11 +473,9 @@ bool updCheck() {
   }
   int cmp = updCompare(tag.c_str(), updVersion());
   bool newer = !updIsDev() && cmp > 0;
-  bool wentBack = tag == badTag;  // it was installed once and didn't keep running
   bool installable = url.length() && size > 0 && (updIsDev() || cmp > 0);
   String status;
   if ((newer || updIsDev()) && !url.length()) status = fmt("%s has no %s to install", tag.c_str(), ASSET);
-  else if (newer && wentBack) status = fmt("%s didn't start here before: install it by hand to try again", tag.c_str());
   else if (newer) status = fmt("%s is available", tag.c_str());
   else if (updIsDev()) status = fmt("%s is the latest release (this is a dev build)", tag.c_str());
   else status = "You're up to date";
@@ -507,16 +489,13 @@ bool updCheck() {
   shaHex = sha;
   binTag = tag;
   binHttpOk = custom && OTA_HTTP;
-  Locked l;
   info.state = UPD_IDLE;
   info.status = status;
   info.failed = (newer || updIsDev()) && !url.length();
   info.latest = tag;
   info.notes = notesFrom(body);
   info.available = installable;
-  info.newer = newer && installable && !wentBack;  // what an automatic install may take
   info.checkedMs = millis();
-  info.checkedAt = timeKnown() ? time(nullptr) : 0;
   return true;
 }
 
@@ -527,7 +506,6 @@ class FlashSink : public Sink {
  public:
   size_t expect, done = 0;
   mbedtls_sha256_context sha;
-  int lastPercent = -1;
   explicit FlashSink(size_t e) : expect(e) {
     mbedtls_sha256_init(&sha);
     mbedtls_sha256_starts(&sha, 0);
@@ -545,12 +523,6 @@ class FlashSink : public Sink {
     if (Update.write((uint8_t *)b, n) != n) return why = String("flash write: ") + Update.errorString(), false;
     mbedtls_sha256_update(&sha, b, n);
     done += n;
-    int pct = done * 100 / expect;
-    if (pct != lastPercent) {
-      lastPercent = pct;
-      Locked l;
-      info.percent = pct;
-    }
     return true;
   }
 };
@@ -565,9 +537,7 @@ bool updInstall() {
   if (!binUrl.length() || !binSize) return installFailed("Nothing to install: check first", "no release");
   String tag = binTag;
   {
-    Locked l;
     info.state = UPD_INSTALLING;
-    info.percent = 0;
     info.status = fmt("Updating to %s", tag.c_str());
     info.failed = false;
   }
@@ -617,12 +587,9 @@ bool updInstall() {
     p.end();
   }
   {
-    Locked l;
     info.state = UPD_RESTARTING;
-    info.percent = 100;
     info.status = "Restarting...";
   }
-  delay(3000);  // the loop shows "Restarting..."
   Serial.flush();
   ESP.restart();
   return true;

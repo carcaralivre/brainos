@@ -5,7 +5,7 @@
 #include <esp_heap_caps.h>
 #include <freertos/idf_additions.h>
 #include "config.h"
-#include "json.h"
+#include "provjson.h"
 #include "net.h"
 #include "notes.h"
 
@@ -31,6 +31,11 @@ static String logSafe(const String &s, int n) { String t = s.substring(0, n); t.
 static int post(const uint8_t *body, size_t len, const String &type, String &reply) {
   String headers = "Authorization: Bearer " + cfg::str("stt.api_key") + "\r\nHTTP-Referer: https://github.com/carcaralivre/brainos\r\nX-Title: BrainOS\r\nContent-Type: " + type + "\r\n";
   return netPost("openrouter.ai", "/api/v1/audio/transcriptions", headers, body, len, reply, 90000);
+}
+
+static bool textOf(const String &reply, String &text) {   // {"text": "..."} from the service
+  pj::Val v, f;
+  return pj::parse(reply.c_str(), reply.length(), v) && pj::member(v, "text", f) && pj::str(f, text);
 }
 
 static void workerTask(void *) {
@@ -62,11 +67,10 @@ static void workerTask(void *) {
         job.fatal = code >= 400 && code < 500 && code != 429 && code != 401;   // a bad request or an unknown model will not get better; a key problem or a rate limit may
         if (reply.indexOf("model") >= 0 && code == 400) job.error = "OpenRouter doesn't know the model";
         Serial.printf("stt: failed, %d: %s\n", code, logSafe(reply, 200).c_str());
-      } else if (reply.indexOf("\"text\"") < 0) {
+      } else if (!textOf(reply, job.text)) {
         job.error = "OpenRouter sent no text";
         Serial.printf("stt: no text: %s\n", logSafe(reply, 120).c_str());
       } else {
-        job.text = jsonString(reply, "text");
         job.text.trim();
         Serial.printf("stt: heard \"%s\" in %lu ms\n", job.text.c_str(), (unsigned long)(millis() - start));
         if (!job.text.length()) { job.error = "Nothing was heard"; job.fatal = true; }

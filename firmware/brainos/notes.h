@@ -17,6 +17,7 @@ void notesBegin();                                   // mount and load
 void notesSave();                                    // write the whole file atomically
 std::vector<Note, PsAlloc<Note>> &notesAll();
 Note *notesFind(const String &id);
+void notesPin(Note &n);   // pins (or unpins); with three already pinned, the oldest pin is let go
 Note &notesAdd(const String &text, const String &audio, uint16_t secs, const String &id = "");   // a recording is named after its id
 void notesRemove(const String &id);                  // and its audio file
 int notesCount(bool archived);                       // how many in the list (or in the archive)

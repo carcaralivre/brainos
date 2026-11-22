@@ -145,7 +145,7 @@ static void serialCommand(char *line) {
     *sp = 0;
     std::vector<WifiCred> nets = cfg::wifiNetworks();
     nets.push_back({String(line + 9), String(sp + 1)});
-    String err; cfg::setWifiInPlace(nets, err);
+    String err; cfg::setWifi(nets, err);
     Serial.printf("wifi: %s\n", err.length() ? err.c_str() : "saved"); netTouch();
   } else if (!strcmp(line, "wifi")) { Serial.printf("wifi: %s %s %d dBm, wanted %d, %u networks saved, key %s, pending %d\n", netUp() ? "up" : "down", netAddress().c_str(), netSignal(), netWanted(), (unsigned)cfg::wifiNetworks().size(), sttConfigured() ? "set" : "none", notesPending()); }
   else if (!strcmp(line, "nettest")) netTest();
@@ -235,7 +235,8 @@ void loop() {
     readSensors();
     if (screen == SCREEN_LOCK) uiRender(false);
   }
-  long sleepMin = cfg::num("sleep.min");
+  static long sleepMin = -1;
+  if (sleepMin < 0 || millis() - lastMinute < 20) sleepMin = cfg::num("sleep.min");   // read once a minute (and right after the page saved it)
   if (sleepMin > 0 && !now.usb && millis() - lastActivity > (uint32_t)sleepMin * 60000 && !sttRunning() && screen != SCREEN_EXPORT) {
     goToSleep();
   }
