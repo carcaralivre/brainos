@@ -194,8 +194,9 @@ static void drawList(bool archived) {
     auto lines = wrapLines(F_S12, body, W - 48 - 64 - (n.pinned ? 22 : 0), 2);
     int first = y + r.h / 2 + 8 - (lines.size() > 1 ? 12 : 0);   // the text block centred in the row
     for (size_t i = 0; i < lines.size(); i++) text(24, first + i * 24, F_S12, lines[i].c_str());
-    textRight(W - 24, first - 2, F_S9, timeOf(n.created, false).c_str());
-    if (n.pinned) iconPin(W - 44, first + 6);
+    String at = timeOf(n.created, false);
+    textRight(W - 24, first - 2, F_S9, at.c_str());
+    if (n.pinned) iconPin(W - 24 - textW(F_S9, at.c_str()) - 10 - 16, first - 15);   // beside the time, on its line
     canvas->drawFastHLine(24, y + r.h - 1, W - 48, INK);
   }
   if (!any) textCentre(W / 2, H / 2, F_S12, archived ? "The archive is empty" : "No notes yet");
@@ -241,7 +242,7 @@ static void drawLock() {
       auto lines = wrapLines(F_S12, waitingOr(p), W - 48 - 56, min(maxLines, 4));
       int height = 30 + 26 * max<int>(1, lines.size());
       canvas->drawRoundRect(24, top, W - 48, height, 8, INK);
-      iconPin(W - 48, top + 10);
+      iconPin(W - 48, top + height / 2 - 8);   // centred in the box
       for (size_t k = 0; k < lines.size(); k++) text(40, top + 34 + k * 26, F_S12, lines[k].c_str());
       lockBoxes.push_back({top, height, p.id});
       top += height + 12;
@@ -379,11 +380,19 @@ static void startWifiScan() {
   uiGo(SCREEN_WIFI_SCAN);
 }
 
-static void joinNetwork(const String &ssid, const String &pass) {
+static bool joinCancelled() {   // a tap on the Cancel button while the board tries to connect
+  TouchEvent te = touchPoll();
+  return te.kind == TOUCH_TAP && inFooter(te.y);
+}
+
+// onFail: where a failed or cancelled attempt lands (the saved list, or the password keyboard).
+static void joinNetwork(const String &ssid, const String &pass, Screen onFail) {
   canvas->fillScreen(PAPER); topBar("Wi-Fi", false);
-  textCentre(W / 2, H / 2, F_S12, fitted(F_S12, "Connecting to " + ssid + "…", W - 48).c_str()); show(false);
+  textCentre(W / 2, H / 2, F_S12, fitted(F_S12, "Connecting to " + ssid + "…", W - 48).c_str());
+  button(24, FOOT_Y, W - 48, 52, "Cancel", false);
+  show(false);
   String why;
-  bool ok = netJoin(ssid, pass, why);
+  bool ok = netJoin(ssid, pass, why, joinCancelled);
   if (ok) {
     std::vector<WifiCred> nets = cfg::wifiNetworks();
     for (size_t i = 0; i < nets.size(); i++) if (nets[i].ssid == ssid) nets.erase(nets.begin() + i--);
@@ -392,9 +401,12 @@ static void joinNetwork(const String &ssid, const String &pass) {
     wifiMsg = err.length() ? "Connected, but not saved: " + err : "Connected and saved";
     netTouch();
     uiGo(SCREEN_WIFI);
-  } else {
+  } else if (onFail == SCREEN_KEYBOARD) {
     kb.note = why;
     uiGo(SCREEN_KEYBOARD);
+  } else {
+    wifiMsg = why;
+    uiGo(SCREEN_WIFI);
   }
 }
 
@@ -455,7 +467,7 @@ static void keyboardResult(KbResult r) {
   else if (r == KB_DONE) {
     if (kbPurpose == 1) { Note *n = notesFind(openId); if (n) { n->text = kb.text; n->modified = time(nullptr); notesSave(); } uiGo(SCREEN_NOTE); }
     else if (kbPurpose == 3) { String t = kb.text; t.trim(); if (t.length()) notesAdd(t, "", 0); uiGo(SCREEN_NOTES); }
-    else if (kbPurpose == 2) { if (kb.text.length() < 8) { kb.note = "A password has at least 8 characters"; uiRender(false); } else joinNetwork(joinSsid, kb.text); }
+    else if (kbPurpose == 2) { if (kb.text.length() < 8) { kb.note = "A password has at least 8 characters"; uiRender(false); } else joinNetwork(joinSsid, kb.text, SCREEN_KEYBOARD); }
   }
 }
 
@@ -540,7 +552,7 @@ void uiTap(int x, int y) {
       } else if (i >= 0 && i < (int)nets.size()) {   // the name: connect to it
         forgetArmed = -1;
         if (netUp() && netName() == nets[i].ssid) { wifiMsg = "Already connected"; uiRender(false); }
-        else joinNetwork(nets[i].ssid, nets[i].pass);
+        else joinNetwork(nets[i].ssid, nets[i].pass, SCREEN_WIFI);
       } else if (forgetArmed >= 0) { forgetArmed = -1; uiRender(false); }
       break;
     }
@@ -550,7 +562,7 @@ void uiTap(int x, int y) {
       int i = y < LIST_TOP ? -1 : (y - LIST_TOP) / scanRowH();
       if (i >= 0 && i < (int)seen.size() && i < (int)SCAN_A_PAGE) {
         joinSsid = seen[i].ssid;
-        if (!seen[i].secure) joinNetwork(joinSsid, "");
+        if (!seen[i].secure) joinNetwork(joinSsid, "", SCREEN_WIFI_SCAN);
         else { keyboardBegin(kb, "", ("Password for " + joinSsid).c_str(), "", 64); keyboardSecret(kb); kbPurpose = 2; kbBack = SCREEN_WIFI_SCAN; uiGo(SCREEN_KEYBOARD); }
       }
       break;

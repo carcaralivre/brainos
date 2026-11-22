@@ -157,16 +157,17 @@ static String reasonText(uint8_t r) {
   }
 }
 
-bool netJoin(const String &ssid, const String &pass, String &why, uint32_t timeoutMs) {
+bool netJoin(const String &ssid, const String &pass, String &why, bool (*cancel)(), uint32_t timeoutMs) {
   radio(true);
   WiFi.disconnect();
   delay(100);
   lastReason = 0;
   WiFi.begin(ssid.c_str(), pass.c_str());
   uint32_t start = millis();
-  while (!netUp() && millis() - start < timeoutMs) delay(50);
+  bool cancelled = false;
+  while (!netUp() && millis() - start < timeoutMs) { if (cancel && cancel()) { cancelled = true; break; } delay(50); }
   bool ok = netUp();
-  if (!ok) { why = reasonText(lastReason); WiFi.disconnect(); }
+  if (!ok) { why = cancelled ? "Cancelled" : reasonText(lastReason); WiFi.disconnect(); }
   tryIndex = -1;
   Serial.printf("wifi: join %s: %s\n", ssid.c_str(), ok ? "ok" : why.c_str());
   return ok;

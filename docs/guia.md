@@ -13,7 +13,7 @@
 Com o aparelho na rede, abra http://brain.local no iPhone ou no Mac: lá dá para criar e editar notas, fixar, arquivar e apagar, exportar as notas da lista em Markdown (que as arquiva, como o QR), baixar tudo, adicionar e esquecer redes Wi-Fi, checar e instalar atualização, e mudar nome, fuso (menu), modelo de transcrição (menu), som (desligado de fábrica) e tempos (de fábrica: Wi-Fi 15 min após o último toque, dormir após 30 min na bateria). O botão no topo abre a página leitora de QR. Uma gravação ainda não transcrita não pode ser editada nem arquivada; se o serviço recusar o áudio de vez, a nota fica com "(not transcribed: …)" em vez de tentar para sempre.
 
 ## Rede e chave
-1. Settings → Wi-Fi → "Add a network": escolha a rede (o cadeado marca as com senha, as barras mostram o sinal), digite a senha, Done. "Scan again" procura de novo. Na lista de redes salvas, tocar no nome conecta nela; tocar no X (duas vezes) esquece.
+1. Settings → Wi-Fi → "Add a network": escolha a rede (o cadeado marca as com senha, as barras mostram o sinal), digite a senha, Done. "Scan again" procura de novo. Na lista de redes salvas, tocar no nome conecta nela (há um Cancel enquanto tenta); tocar no X (duas vezes) esquece.
 2. No iPhone ou Mac, na mesma rede: `http://brain.local` (ou o IP que aparece em Settings → About). Cole a chave do OpenRouter e Save.
 3. O Wi-Fi fica ligado enquanto o aparelho está acordado. Na página brain.local dá para limitar a N minutos após o último toque.
 

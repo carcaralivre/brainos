@@ -18,7 +18,7 @@ bool timeKnown();
 
 struct NetSeen { String ssid; int rssi; bool secure; };
 bool netScan(std::vector<NetSeen> &out, String &why);                       // blocking, a few seconds
-bool netJoin(const String &ssid, const String &pass, String &why, uint32_t timeoutMs = 15000);
+bool netJoin(const String &ssid, const String &pass, String &why, bool (*cancel)() = nullptr, uint32_t timeoutMs = 15000);   // cancel(): polled while waiting; true gives up
 
 static const int NET_HANDSHAKE_S = 8;
 static const int NET_CONNECT_MS = 5000;
