@@ -126,16 +126,13 @@ static void button(int x, int y, int w, int h, const char *label, bool filled) {
 
 struct Row { int noteIndex; int y, h; String day; };  // noteIndex -1: a day header
 static std::vector<Row> rows;
-static const int ROW_H = 68, HEAD_H = 36, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = 88;
+static const int ROW_H = 64, HEAD_H = 32, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = 84;   // nine notes and up to two day headers a page
 
 static std::vector<int> listed(bool archived) {
   auto &all = notesAll();
   std::vector<int> idx;
   for (size_t i = 0; i < all.size(); i++) if (all[i].archived == archived) idx.push_back(i);
-  std::sort(idx.begin(), idx.end(), [&](int a, int b) {
-    if (all[a].pinned != all[b].pinned) return all[a].pinned;   // the pinned ones first
-    return all[a].created > all[b].created;
-  });
+  std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created > all[b].created; });   // newest first; a pinned note keeps its place and shows the pin
   return idx;
 }
 
@@ -161,7 +158,7 @@ static int listPages(bool archived) {
   String lastDay;
   int y = LIST_TOP, pageH = H - LIST_TOP - LIST_BOTTOM_PAD, pages = 1;
   for (int i : idx) {
-    String day = all[i].pinned ? "Pinned" : dayLabel(all[i].created);
+    String day = dayLabel(all[i].created);
     int need = (day != lastDay ? HEAD_H : 0) + ROW_H;
     if (y - LIST_TOP + need > pageH * pages) { pages++; y = LIST_TOP + pageH * (pages - 1); lastDay = ""; }
     if (day != lastDay) { rows.push_back({-1, y, HEAD_H, day}); y += HEAD_H; lastDay = day; }
@@ -185,16 +182,16 @@ static void drawList(bool archived) {
     if (y < LIST_TOP || y + r.h > LIST_TOP + pageH) continue;
     any = true;
     if (r.noteIndex < 0) {
-      text(24, y + 24, F_B9, r.day.c_str());
-      canvas->drawFastHLine(24, y + 31, W - 48, INK);
+      text(24, y + 22, F_B9, r.day.c_str());
+      canvas->drawFastHLine(24, y + HEAD_H - 1, W - 48, INK);
       continue;
     }
     const Note &n = all[r.noteIndex];
     String body = n.audio.length() ? String("Recording, ") + n.secs + " s. Waiting for Wi-Fi to transcribe." : n.text;
     auto lines = wrapLines(F_S12, body, W - 48 - 64 - (n.pinned ? 22 : 0), 2);
-    for (size_t i = 0; i < lines.size(); i++) text(24, y + 26 + i * 24, F_S12, lines[i].c_str());
-    textRight(W - 24, y + 24, F_S9, timeOf(n.created, false).c_str());
-    if (n.pinned) iconPin(W - 44, y + 32);
+    for (size_t i = 0; i < lines.size(); i++) text(24, y + 25 + i * 24, F_S12, lines[i].c_str());
+    textRight(W - 24, y + 23, F_S9, timeOf(n.created, false).c_str());
+    if (n.pinned) iconPin(W - 44, y + 31);
     if (&r != last) canvas->drawFastHLine(24, y + r.h - 1, W - 48, INK);
   }
   if (!any) textCentre(W / 2, H / 2, F_S12, archived ? "The archive is empty" : "No notes yet");
@@ -212,6 +209,8 @@ static int rowAt(int y) {  // the note index under y on the current page, or -1
 
 // ---------------------------------------------------------------- screens
 
+struct LockBox { int y, h; String id; };
+static std::vector<LockBox> lockBoxes;   // the pinned notes on the lock screen, for taps
 static void drawLock() {
   char buf[64];
   if (now.battery) snprintf(buf, sizeof(buf), "%d%%", now.percent); else strcpy(buf, "--%");
@@ -226,12 +225,13 @@ static void drawLock() {
   static const char *MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   if (known) snprintf(buf, sizeof(buf), "%s, %s %d", DAYS[tm.tm_wday], MONTHS[tm.tm_mon], tm.tm_mday); else strcpy(buf, "Time not set");
   textCentre(W / 2, 240, F_S12, buf);
-  {  // the pinned notes, newest pin first, stacked while they fit
+  lockBoxes.clear();
+  {  // the pinned notes, newest first, stacked while they fit; a tap on one opens it
     auto idx = listed(false);
     int top = 300, bottom = H - 110;
     for (int i : idx) {
       const Note &p = notesAll()[i];
-      if (!p.pinned) break;
+      if (!p.pinned) continue;
       int maxLines = (bottom - top - 30) / 26;
       if (maxLines < 1) break;
       auto lines = wrapLines(F_S12, p.audio.length() ? "(recording, waiting)" : p.text, W - 48 - 56, min(maxLines, 4));
@@ -239,6 +239,7 @@ static void drawLock() {
       canvas->drawRect(24, top, W - 48, height, INK);
       iconPin(W - 48, top + 10);
       for (size_t k = 0; k < lines.size(); k++) text(40, top + 34 + k * 26, F_S12, lines[k].c_str());
+      lockBoxes.push_back({top, height, p.id});
       top += height + 12;
     }
   }
@@ -374,7 +375,7 @@ static void joinNetwork(const String &ssid, const String &pass) {
 static void drawArchive() {
   topBar("Archive", true);
   drawList(true);
-  if (notesCount(true)) button(24, FOOT_Y, W - 48, 52, deleteAllArmed ? "Tap again to delete everything" : "Delete all", deleteAllArmed);
+  if (notesCount(true)) button(24, FOOT_Y, W - 48, 52, deleteAllArmed ? "Confirm" : "Delete all", deleteAllArmed);
 }
 
 static void drawSoon(const char *title) {
@@ -442,7 +443,10 @@ static bool leftIcon(int x, int y) { return inBar(y) && x < 80; }
 
 void uiTap(int x, int y) {
   switch (screen) {
-    case SCREEN_LOCK: uiGo(lockFrom); break;
+    case SCREEN_LOCK:
+      for (auto &b : lockBoxes) if (y >= b.y && y < b.y + b.h) { openId = b.id; deleteArmed = false; uiGo(SCREEN_NOTE); return; }
+      uiGo(lockFrom);
+      break;
     case SCREEN_SAVED: uiGo(SCREEN_NOTES); break;
     case SCREEN_NOTES: {
       if (inFooter(y)) {

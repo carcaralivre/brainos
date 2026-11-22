@@ -41,8 +41,8 @@ std::vector<String> wrapped(const GFXfont *font, const String &s, int width) {
 
 enum KeyCode { K_SHIFT = 1, K_BACK, K_LAYER, K_MORE, K_ACCENTS };
 struct KeyBox { int16_t x, y, w, h; uint16_t code; };
-static const int PITCH = 80, KB_NOTE_H = 26, KB_MAX_KEYS = 48;
-static int keyboardHeight() { return KB_NOTE_H + 4 * PITCH + 2; }
+static const int PITCH = 80, KB_MAX_KEYS = 48;
+static int keyboardHeight() { return 4 * PITCH + 2; }
 static const char *const LETTERS[] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
 static const char *ACCENTS = "áàâãçéêíóôõú";
 
@@ -139,8 +139,7 @@ static void keyboardField(Keyboard &kb, int x, int y, int w, int h) {
 static void keyLabel(int cx, int cy, const GFXfont *f, const char *s, int lift) { textCentre(cx, cy + lift, f, s); }
 
 static void keyboardDrawKeys(Keyboard &kb, int top) {
-  if (kb.note.length()) text(12, top + 19, F_B9, fitted(F_B9, kb.note, W - 24).c_str());
-  kb.keysTop = top + KB_NOTE_H;
+  kb.keysTop = top;
   KeyBox keys[KB_MAX_KEYS];
   int n = keyboardKeys(kb, kb.keysTop, keys);
   for (int i = 0; i < n; i++) {
@@ -190,9 +189,10 @@ void keyboardDraw(Keyboard &kb) {
   uiTitle(fitted(F_B12, kb.label, W - 160).c_str());
   if (kb.masked) textRight(W - 24, 38, F_B9, kb.reveal ? "Hide" : "Show");
   int keysAt = H - keyboardHeight();
-  kb.buttonsY = keysAt - 12 - KB_BTN_H;
-  int fieldY = KB_BAR + 8;
-  keyboardField(kb, 24, fieldY, W - 48, kb.buttonsY - KB_GAP - fieldY);
+  kb.buttonsY = keysAt - KB_GAP - KB_BTN_H;   // the same gap above and below the buttons
+  int fieldY = KB_BAR + 8, fieldBottom = kb.buttonsY - KB_GAP;
+  if (kb.note.length()) { fieldBottom -= 28; textCentre(W / 2, fieldBottom + 20, F_B9, fitted(F_B9, kb.note, W - 48).c_str()); }   // a message between the field and the buttons
+  keyboardField(kb, 24, fieldY, W - 48, fieldBottom - fieldY);
   int bw = (W - 48 - KB_GAP) / 2;
   uiButton(24, kb.buttonsY, bw, KB_BTN_H, "Cancel", false);
   uiButton(24 + bw + KB_GAP, kb.buttonsY, bw, KB_BTN_H, "Done", false);

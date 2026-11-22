@@ -6,7 +6,7 @@
 - **Dormir**: na bateria, após 30 minutos sem uso, ele vai para a lock screen e dorme fundo; um clique em OK acorda, outro destranca onde você estava. Na tomada não dorme. O Wi-Fi fica sempre ligado enquanto acordado.
 - **Cima/Baixo**: passam as páginas da lista; com uma nota aberta, vão para a anterior e a seguinte.
 - **Cima + Baixo juntos**: tranca. Segurando os dois por 2 s: dorme (OK acorda).
-- **Toque**: na lista, os botões New note e Settings embaixo; uma nota = abre (Pin, Edit, Archive, Delete; uma nota arquivada só tem Restore e Delete). Settings tem Wi-Fi, Export, Archive e About; o resto fica em http://brain.local.
+- **Toque**: na lista, os botões New note e Settings embaixo; uma nota = abre (Pin, Edit, Archive, Delete; uma nota arquivada só tem Restore e Delete). Uma nota fixada fica no lugar dela na lista, com a tachinha, e aparece na lock screen: tocar nela ali abre a nota. Settings tem Wi-Fi, Export, Archive e About; o resto fica em http://brain.local.
 - **Fixadas**: até 3; aparecem no topo da lista e na lock screen. Ao fixar uma quarta, a fixada mais antiga é liberada.
 
 ## A página brain.local
