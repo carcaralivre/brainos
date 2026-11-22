@@ -1,4 +1,5 @@
 #include "net.h"
+extern const char *const VERSION;
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -242,7 +243,7 @@ int netPost(const char *host, const char *path, const String &headers, const uin
   WiFiClientSecure tls;
   netTrust(tls);
   if (!tls.connect(host, 443, 15000)) { reply = "connect failed"; return HTTPC_ERROR_CONNECTION_REFUSED; }
-  String h = String("POST ") + path + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: BrainOS/0.1\r\nConnection: close\r\nAccept: application/json\r\n" + headers + "Content-Length: " + String(len) + "\r\n\r\n";
+  String h = String("POST ") + path + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: brainos/" + VERSION + "\r\nConnection: close\r\nAccept: application/json\r\n" + headers + "Content-Length: " + String(len) + "\r\n\r\n";
   if (tls.write((const uint8_t *)h.c_str(), h.length()) != h.length()) { tls.stop(); reply = "header send failed"; return HTTPC_ERROR_SEND_HEADER_FAILED; }
   size_t sent = 0;
   while (sent < len) {   // 1 KB at a time: larger writes get the connection reset on this core

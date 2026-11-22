@@ -24,7 +24,8 @@ static bool deleteArmed;            // Delete tapped once
 static bool deleteAllArmed;
 static int savedSecs;
 static Keyboard kb;
-bool updateQueued();   // brainos.ino: a check or install asked for, not started yet
+bool updateQueued();       // brainos.ino: a check or install asked for, not started yet
+bool updateInstalling();   // brainos.ino: the install is running on the loop (the screen cannot change)
 static int kbPurpose;              // 1 edit the open note, 2 a Wi-Fi password
 static Screen kbBack;
 static std::vector<NetSeen> seen;  // the last scan
@@ -126,7 +127,7 @@ static void button(int x, int y, int w, int h, const char *label, bool filled) {
 
 struct Row { int noteIndex; int y, h; String day; };  // noteIndex -1: a day header
 static std::vector<Row> rows;
-static const int ROW_H = 64, HEAD_H = 32, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = 84;   // nine notes and up to two day headers a page
+static const int ROW_H = 66, HEAD_H = 32, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = 76;   // nine notes and two day headers fill the page down to the buttons
 
 static std::vector<int> listed(bool archived) {
   auto &all = notesAll();
@@ -236,7 +237,7 @@ static void drawLock() {
       if (maxLines < 1) break;
       auto lines = wrapLines(F_S12, p.audio.length() ? "(recording, waiting)" : p.text, W - 48 - 56, min(maxLines, 4));
       int height = 30 + 26 * max<int>(1, lines.size());
-      canvas->drawRect(24, top, W - 48, height, INK);
+      canvas->drawRoundRect(24, top, W - 48, height, 8, INK);
       iconPin(W - 48, top + 10);
       for (size_t k = 0; k < lines.size(); k++) text(40, top + 34 + k * 26, F_S12, lines[k].c_str());
       lockBoxes.push_back({top, height, p.id});
@@ -262,18 +263,18 @@ static void drawNote() {
   if (!n) { textCentre(W / 2, H / 2, F_S12, "Gone"); return; }
   text(24, BAR + 28, F_S9, timeOf(n->created, true).c_str());
   String body = n->audio.length() ? String("Recording of ") + n->secs + " s, waiting for Wi-Fi to be transcribed." : n->text;
-  auto lines = wrapLines(F_S12, body, W - 48, (H - BAR - 140) / 26);
+  int bw = (W - 48 - 16) / 2, by = n->archived ? FOOT_Y : H - 76 - 64;
+  auto lines = wrapLines(F_S12, body, W - 48, (by - 16 - (BAR + 60)) / 26);   // the text stops above the buttons
   for (size_t i = 0; i < lines.size(); i++) text(24, BAR + 60 + i * 26, F_S12, lines[i].c_str());
-  int bw = (W - 48 - 16) / 2;
   if (n->archived) {   // an archived note is neither pinned nor edited: Restore | Delete only
     button(24, FOOT_Y, bw, 52, "Restore", false);
     button(24 + bw + 16, FOOT_Y, bw, 52, deleteArmed ? "Confirm" : "Delete", deleteArmed);
     return;
   }
-  int by = H - 76 - 64;
+  bool waiting = n->audio.length() > 0;   // a recording still to be transcribed is neither edited nor archived
   button(24, by, bw, 52, n->pinned ? "Unpin" : "Pin", n->pinned);
-  button(24 + bw + 16, by, bw, 52, "Edit", false);
-  button(24, by + 64, bw, 52, "Archive", false);
+  if (!waiting) button(24 + bw + 16, by, bw, 52, "Edit", false);
+  if (!waiting) button(24, by + 64, bw, 52, "Archive", false);
   button(24 + bw + 16, by + 64, bw, 52, deleteArmed ? "Confirm" : "Delete", deleteArmed);
 }
 
@@ -283,7 +284,7 @@ static const int SROW = 72;
 static void settingsRow(int i, const char *label, const String &value) {
   int y = BAR + 12 + i * SROW;
   text(24, y + 44, F_S12, label);
-  if (value.length()) textRight(W - 24, y + 44, F_S12, value.c_str());
+  if (value.length()) textRight(W - 24, y + 44, F_S12, fitted(F_S12, value, W - 48 - textW(F_S12, label) - 16).c_str());
   canvas->drawFastHLine(24, y + SROW - 1, W - 48, INK);
 }
 static int settingsRowAt(int y) { int i = (y - BAR - 12) / SROW; return y < BAR + 12 ? -1 : i; }
@@ -336,7 +337,7 @@ static void drawAbout() {
   for (auto &l : lines) { if (!l.length()) continue; auto w = wrapLines(F_S9, l, W - 48, 2); for (auto &t : w) { text(24, y, F_S9, t.c_str()); y += 24; } y += 6; }
   UpdInfo u = updInfo();
   if (u.status.length() && u.checkedMs) { auto w = wrapLines(F_S9, u.status, W - 48, 3); y += 10; for (auto &t : w) { text(24, y, F_S9, t.c_str()); y += 24; } }
-  if (u.state == UPD_INSTALLING) button(24, FOOT_Y, W - 48, 52, "Installing, don't switch off", true);
+  if (u.state == UPD_INSTALLING || updateInstalling()) button(24, FOOT_Y, W - 48, 52, "Installing, don't switch off", true);
   else if (u.available) {
     int bw = (W - 48 - 16) / 2;
     button(24, FOOT_Y, bw, 52, u.state == UPD_CHECKING || updateQueued() ? "Checking…" : "Check again", false);
@@ -347,14 +348,14 @@ static void drawAbout() {
 static void drawKeyboard() { keyboardDraw(kb); }
 
 static void startWifiScan() {
-  canvas->fillScreen(PAPER); topBar("Networks", true); textCentre(W / 2, H / 2, F_S12, "Scanning…"); show(false);
+  canvas->fillScreen(PAPER); topBar("Networks", false); textCentre(W / 2, H / 2, F_S12, "Scanning…"); show(false);
   String why;
   netScan(seen, why);
   uiGo(SCREEN_WIFI_SCAN);
 }
 
 static void joinNetwork(const String &ssid, const String &pass) {
-  canvas->fillScreen(PAPER); topBar("Wi-Fi", true);
+  canvas->fillScreen(PAPER); topBar("Wi-Fi", false);
   textCentre(W / 2, H / 2, F_S12, fitted(F_S12, "Connecting to " + ssid + "…", W - 48).c_str()); show(false);
   String why;
   bool ok = netJoin(ssid, pass, why);
@@ -376,11 +377,6 @@ static void drawArchive() {
   topBar("Archive", true);
   drawList(true);
   if (notesCount(true)) button(24, FOOT_Y, W - 48, 52, deleteAllArmed ? "Confirm" : "Delete all", deleteAllArmed);
-}
-
-static void drawSoon(const char *title) {
-  topBar(title, true);
-  textCentre(W / 2, H / 2, F_S12, "Coming soon");
 }
 
 static bool listeningDone;
@@ -464,9 +460,10 @@ void uiTap(int x, int y) {
       if (leftIcon(x, y) || !n) { uiGo(home); break; }
       int bw = (W - 48 - 16) / 2, by = n->archived ? FOOT_Y : H - 76 - 64;
       bool right = x >= 24 + bw + 16, row1 = !n->archived && y >= by && y < by + 52, row2 = n->archived ? inFooter(y) : y >= by + 64 && y < by + 116;
+      bool waiting = n->audio.length() > 0;
       if (row1 && !right) { pinNote(*n); deleteArmed = false; uiRender(false); }
-      else if (row1 && right) { keyboardBegin(kb, n->text, "Edit note", "", 1000); kbPurpose = 1; kbBack = SCREEN_NOTE; uiGo(SCREEN_KEYBOARD); }
-      else if (row2 && !right) { n->archived = !n->archived; if (n->archived) n->pinned = false; else n->exported = false; n->modified = time(nullptr); notesSave(); uiGo(n->archived ? SCREEN_NOTES : SCREEN_ARCHIVE); }
+      else if (row1 && right && !waiting) { keyboardBegin(kb, n->text, "Edit note", "", 1000); kbPurpose = 1; kbBack = SCREEN_NOTE; uiGo(SCREEN_KEYBOARD); }
+      else if (row2 && !right && !waiting) { n->archived = !n->archived; if (n->archived) n->pinned = false; else n->exported = false; n->modified = time(nullptr); notesSave(); uiGo(n->archived ? SCREEN_NOTES : SCREEN_ARCHIVE); }
       else if (row2 && right) {
         if (!deleteArmed) { deleteArmed = true; uiRender(false); }
         else { notesRemove(openId); deleteArmed = false; uiGo(home); }
@@ -572,10 +569,11 @@ void uiMove(int by) {
 
 void uiLock() {
   if (screen == SCREEN_LOCK) return;
-  lockFrom = (screen == SCREEN_LISTENING || screen == SCREEN_SAVED || screen == SCREEN_KEYBOARD) ? SCREEN_NOTES : screen;
+  if (screen == SCREEN_EXPORT) { exportDone(true); screenGhostReset(); }
+  lockFrom = screen == SCREEN_LISTENING || screen == SCREEN_SAVED || screen == SCREEN_KEYBOARD ? SCREEN_NOTES
+           : screen == SCREEN_EXPORT ? SCREEN_SETTINGS : screen == SCREEN_WIFI_SCAN ? SCREEN_WIFI : screen;
   uiGo(SCREEN_LOCK);
 }
-void uiHome() { uiLock(); }
 
 // Deep sleep keeps the picture; these keep the place.
 void uiSaveForSleep() {
@@ -586,7 +584,10 @@ void uiSaveForSleep() {
 bool uiRestoreAfterSleep() {
   if (rtcScreen < 0) return false;
   screen = (Screen)rtcScreen; openId = rtcOpenId; page = rtcPage; lockFrom = (Screen)rtcLockFrom;
-  if (screen == SCREEN_EXPORT) screen = SCREEN_NOTES;
+  if (screen == SCREEN_EXPORT) screen = SCREEN_SETTINGS;
+  if (screen == SCREEN_WIFI_SCAN) screen = SCREEN_WIFI;
+  if (lockFrom == SCREEN_EXPORT) lockFrom = SCREEN_SETTINGS;
+  if (lockFrom == SCREEN_WIFI_SCAN) lockFrom = SCREEN_WIFI;
   if (screen == SCREEN_NOTE && !notesFind(openId)) screen = SCREEN_NOTES;
   touchQuick = false; screenGhostPause(false);
   return true;

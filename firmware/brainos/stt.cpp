@@ -1,4 +1,5 @@
 #include "stt.h"
+#include <atomic>
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <esp_heap_caps.h>
@@ -13,7 +14,8 @@ static struct {
   String noteId;
   uint8_t *wav; size_t len;
   String text, error;
-  volatile int state;  // 0 idle, 1 running, 2 done
+  bool fatal;               // the service refused this recording for good: stop retrying it
+  std::atomic<int> state;   // 0 idle, 1 running, 2 done; atomic so the strings above are visible to the other core
 } job;
 static TaskHandle_t worker;
 static String lastError;
@@ -43,7 +45,7 @@ static void workerTask(void *) {
     String tail = String("\r\n--") + BOUNDARY + "--\r\n";
     size_t len = head.length() + job.len + tail.length();
     uint8_t *body = (uint8_t *)heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
-    job.text = ""; job.error = "";
+    job.text = ""; job.error = ""; job.fatal = false;
     if (!body) job.error = "No memory for the request";
     else {
       memcpy(body, head.c_str(), head.length());
@@ -57,6 +59,7 @@ static void workerTask(void *) {
       free(body);
       if (code != 200) {
         job.error = netFailText("OpenRouter", code);
+        job.fatal = code >= 400 && code < 500 && code != 429 && code != 401;   // a bad request or an unknown model will not get better; a key problem or a rate limit may
         if (reply.indexOf("model") >= 0 && code == 400) job.error = "OpenRouter doesn't know the model";
         Serial.printf("stt: failed, %d: %s\n", code, logSafe(reply, 200).c_str());
       } else if (reply.indexOf("\"text\"") < 0) {
@@ -66,7 +69,7 @@ static void workerTask(void *) {
         job.text = jsonString(reply, "text");
         job.text.trim();
         Serial.printf("stt: heard \"%s\" in %lu ms\n", job.text.c_str(), (unsigned long)(millis() - start));
-        if (!job.text.length()) job.error = "Nothing was heard";
+        if (!job.text.length()) { job.error = "Nothing was heard"; job.fatal = true; }
       }
     }
     job.state = 2;
@@ -91,6 +94,13 @@ void sttTick() {
     if (job.error.length()) {
       lastError = job.error; lastFailAt = millis(); failures++;
       Serial.printf("stt: %s\n", lastError.c_str());
+      if (job.fatal && n) {   // keep the note, drop the audio: it would fail the same way every time
+        LittleFS.remove(n->audio);
+        n->audio = ""; n->secs = 0;
+        n->text = "(not transcribed: " + job.error + ")";
+        n->modified = time(nullptr);
+        notesSave();
+      }
     } else if (n) {
       LittleFS.remove(n->audio);
       n->audio = ""; n->secs = 0;

@@ -17,9 +17,8 @@ void notesBegin();                                   // mount and load
 void notesSave();                                    // write the whole file atomically
 std::vector<Note, PsAlloc<Note>> &notesAll();
 Note *notesFind(const String &id);
-Note &notesAdd(const String &text, const String &audio, uint16_t secs);
+Note &notesAdd(const String &text, const String &audio, uint16_t secs, const String &id = "");   // a recording is named after its id
 void notesRemove(const String &id);                  // and its audio file
 int notesCount(bool archived);                       // how many in the list (or in the archive)
-Note *notesPinned();
 int notesPending();                                  // recordings waiting for transcription
 String notesNewId();

@@ -4,7 +4,6 @@
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <WiFiClientSecure.h>
-#include <esp_heap_caps.h>
 #include <time.h>
 #include "board.h"
 #include "capture.h"
@@ -60,32 +59,37 @@ static void recordNote() {
     uiGo(before == SCREEN_LOCK ? SCREEN_LOCK : SCREEN_NOTES);
     return;
   }
-  Note &n = notesAdd("", path, secs);
-  n.id = id;  // the file is named after it
-  notesSave();
+  notesAdd("", path, secs, id);   // the file is named after the id
   beep(2000, 60);
   uiShowSaved(secs);
 }
 
 // Settings -> Update: a check, or an install, run on the loop (Update writes flash: not a PSRAM-stack task).
-static bool updCheckAsk, updInstallAsk;
+static bool updCheckAsk, updInstallAsk, updBusyInstalling;
 bool updateQueued() { return updCheckAsk || updInstallAsk; }
+bool updateInstalling() { return updBusyInstalling; }
 void updateRequest(bool install) { if (install) updInstallAsk = true; else updCheckAsk = true; netTouch(); uiRender(false); }
 static void updateTick() {
-  static uint32_t lastAuto;
   if (updCheckAsk || updInstallAsk) {
     bool install = updInstallAsk;
     updCheckAsk = updInstallAsk = false;
     if (!netUp()) { Serial.println("update: no wifi"); uiRender(false); return; }
-    if (install) { uiRender(false); updInstall(); }   // restarts on success
+    if (install) { updBusyInstalling = true; uiRender(false); updInstall(); updBusyInstalling = false; }   // "Installing" stays on screen; a success restarts
     else updCheck();
     uiRender(false);
-    return;
   }
-
 }
 
-// `nettest`: a small GET to OpenRouter (key + TLS), then a 90 KB POST, on the loop task.
+static void goToSleep() {   // on battery: the lock screen stays on the e-paper; OK wakes, another OK unlocks where it was
+  updMarkGood("sleep");
+  uiLock();
+  uiRender(true);
+  uiSaveForSleep();
+  screenSleep();
+  deepSleep();
+}
+
+// `nettest`: a small GET to OpenRouter (key + TLS) on the loop task.
 static void netTest() {
   if (!netUp()) { Serial.println("nettest: no wifi"); return; }
   {
@@ -121,7 +125,7 @@ static void serialCommand(char *line) {
   int Y, M, D, h, m, x, y;
   if (!strcmp(line, "shot")) shot();
   else if (!strcmp(line, "stats")) { logHeap("stats"); Serial.printf("stats: refreshes full %d partial %d, uptime %lu s, screen %d, notes %d, pending %d\n", refreshCount(true), refreshCount(false), millis() / 1000, screen, notesCount(false), notesPending()); }
-  else if (!strcmp(line, "sleep")) { updMarkGood("sleep"); uiLock(); uiRender(true); uiSaveForSleep(); screenSleep(); deepSleep(); }
+  else if (!strcmp(line, "sleep")) goToSleep();
   else if (sscanf(line, "time %d-%d-%d %d:%d", &Y, &M, &D, &h, &m) == 5) {
     struct tm t = {}; t.tm_year = Y - 1900; t.tm_mon = M - 1; t.tm_mday = D; t.tm_hour = h; t.tm_min = m;
     time_t secs = mktime(&t); struct timeval tv = {secs, 0}; settimeofday(&tv, nullptr);
@@ -135,7 +139,6 @@ static void serialCommand(char *line) {
   else if (!strcmp(line, "ok")) uiOk();
   else if (sscanf(line, "move %d", &x) == 1) uiMove(x);
   else if (!strcmp(line, "lock")) uiGo(SCREEN_LOCK);
-  else if (sscanf(line, "rec %d", &x) == 1) { Serial.println("rec: speak now"); }
   else if (!strncmp(line, "wifi add ", 9)) {   // wifi add <ssid> <password>  (typed by the owner in the terminal)
     char *sp = strchr(line + 9, ' ');
     if (!sp) { Serial.println("wifi add <ssid> <password>"); return; }
@@ -211,8 +214,8 @@ void loop() {
     case BTN_OK: beep(2600, 30); uiOk(); break;
     case BTN_OK_HOLD: recordNote(); break;
     case BTN_MOVE: beep(2600, 30); uiMove(bp.move); break;
-    case BTN_BOTH: beep(2600, 30); uiHome(); break;
-    case BTN_BOTH_LONG: beep(1300, 120); updMarkGood("sleep"); uiLock(); uiRender(true); uiSaveForSleep(); screenSleep(); deepSleep(); break;
+    case BTN_BOTH: beep(2600, 30); uiLock(); break;
+    case BTN_BOTH_LONG: beep(1300, 120); goToSleep(); break;
     default: break;
   }
   if (screen == SCREEN_SAVED) { if (!savedAt) savedAt = millis(); else if (millis() - savedAt > 2500) { savedAt = 0; uiGo(SCREEN_NOTES); } }
@@ -234,12 +237,7 @@ void loop() {
   }
   long sleepMin = cfg::num("sleep.min");
   if (sleepMin > 0 && !now.usb && millis() - lastActivity > (uint32_t)sleepMin * 60000 && !sttRunning() && screen != SCREEN_EXPORT) {
-    updMarkGood("sleep");   // on battery only: the lock screen stays on; a click wakes it, another unlocks where it was
-    uiLock();
-    uiRender(true);
-    uiSaveForSleep();
-    screenSleep();
-    deepSleep();
+    goToSleep();
   }
   delay(10);
 }

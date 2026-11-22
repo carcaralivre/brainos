@@ -8,13 +8,13 @@ Built on [Sticky OS](https://github.com/Sticky-OS/sticky-os) (MIT): its screen, 
 
 ## What it does
 
-- **Lock screen**: battery, a big clock, the date, the pinned note, how many notes there are.
+- **Lock screen**: battery, a big clock, the date, the pinned notes (up to three), how many notes there are.
 - **Notes**: grouped by day. Open one to pin it to the lock screen, edit it on the keyboard, or delete it.
 - **Record**: hold OK anywhere, speak, release. The recording waits in a queue; with Wi-Fi and an OpenRouter key it becomes text in a few seconds.
 - **Always on**: Wi-Fi stays on while the board is awake. On battery it sleeps after 30 minutes without a touch, keeping the picture; OK wakes it where it was.
 - **brain.local**: a page on your network to paste the OpenRouter key, read, pin, archive and delete notes, download them as Markdown, and change settings.
 - **Export**: a loop of QR codes with the new notes; the [reader page](https://carcaralivre.github.io/brainos-reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
-- **Archive** (notes that were exported, by default), **Settings** on the board (Wi-Fi with a scan and a keyboard, export, archive, sound, about with update), **updates over Wi-Fi** from this repository's releases, with rollback.
+- **Archive** (notes that were exported, by default), **Settings** on the board (Wi-Fi with a scan and a keyboard, export, archive, about with update), **updates over Wi-Fi** from this repository's releases, with rollback.
 
 ## Install
 
@@ -35,7 +35,7 @@ firmware/build.sh build   # into ~/.cache/brainos-build
 firmware/build.sh         # build and flash over USB
 ```
 
-Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/tools/shot.py` saves it as PNG), `stats`, `notes`, `note add <text>`, `wifi`, `wifi add <ssid> <password>`, `time YYYY-MM-DD HH:MM`, `tap x y`, `ok`, `move n`, `lock`, `sleep`, `nettest`.
+Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/tools/drive.py <port> shot:file.png` saves it as PNG and runs any other commands in order), `stats`, `notes`, `note add <text>`, `wifi`, `wifi add <ssid> <password>`, `time YYYY-MM-DD HH:MM`, `tap x y`, `ok`, `move n`, `lock`, `sleep`, `nettest`.
 
 `spike/sticky-stt/` is the on-chip speech-to-text experiment that decided against local transcription ([docs/stt-spike.md](docs/stt-spike.md)). It is not part of the firmware.
 
@@ -45,7 +45,7 @@ Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/too
 |---|---|
 | `firmware/brainos/` | the sketch: `board`, `screen`, `touch`, `rtc` (hardware); `notes`, `capture`, `stt`, `net`, `web`, `export`, `ota` (features); `ui`, `keyboard` (screens) |
 | `firmware/build.sh`, `firmware/tools/` | build, flash, screenshots, serial driving |
-| `site/` | the Install page (esp-web-tools), deployed to GitHub Pages by the release workflow |
+| `site/` | the Install page (esp-web-tools), deployed to GitHub Pages by the Install-page workflow after each release |
 | `docs/` | the QR payload spec, the guide, the spike's record, screenshots |
 
 MIT, see LICENSE.

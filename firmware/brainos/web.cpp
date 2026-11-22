@@ -74,7 +74,7 @@ static void sendPage(const String &msg) {
     else p += "<p>" + html(n.text) + "</p>";
     p += "<div class='m'>" + when(n.created) + (n.pinned ? " · <span class='pin'>pinned</span>" : "") + "</div>";
     p += "<form method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'>";
-    p += "<button name='do' value='pin'>" + String(n.pinned ? "Unpin" : "Pin") + "</button><button name='do' value='archive'>Archive</button><button class='d' name='do' value='delete' onclick='return confirm(\"Delete this note?\")'>Delete</button></form>";
+    p += "<button name='do' value='pin'>" + String(n.pinned ? "Unpin" : "Pin") + "</button>" + (n.audio.length() ? String() : String("<button name='do' value='archive'>Archive</button>")) + "<button class='d' name='do' value='delete' onclick='return confirm(\"Delete this note?\")'>Delete</button></form>";
     if (!n.audio.length()) p += "<details><summary>Edit</summary><form method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text'>" + html(n.text) + "</textarea><input type='submit' value='Save'></form></details>";
     p += "</div>";
   }
@@ -84,7 +84,7 @@ static void sendPage(const String &msg) {
   int fresh = 0;
   for (auto &n : all) if (!n.archived && !n.audio.length() && n.text.length()) fresh++;
   p += "<h2>Export</h2><p class='s'>" + String(fresh) + " note" + (fresh == 1 ? "" : "s") + " to export. Exporting here downloads them as Markdown and " + (cfg::flag("export.archive") ? "moves them to the Archive" : "marks them exported") + ", like the QR export on the board.</p>";
-  if (fresh) p += "<form method='post' action='/export'><input type='submit' value='Export new notes (.md)'></form>";
+  if (fresh) p += "<form method='post' action='/export'><input type='submit' value='Export these notes (.md)'></form>";
   UpdInfo u = updInfo();
   p += "<h2>Update</h2><p class='s'>This board: " + String(updVersion()) + (u.checkedMs ? ". " + html(u.status) : "") + "</p><form method='post' action='/update'><button name='do' value='check'>Check for update</button>" + (u.available ? "<button name='do' value='install' onclick='return confirm(\"Install " + html(u.latest) + "? The board restarts.\")'>Install " + html(u.latest) + "</button>" : String()) + "</form>";
   p += "<h2>Settings</h2><form method='post' action='/settings'>";
@@ -113,8 +113,8 @@ static void handleSettings() {
   if (!err.length()) setKey("stt.language", server.arg("lang"), err);
   if (!err.length()) setKey("device.name", server.arg("name"), err);
   if (!err.length()) { setKey("device.timezone", server.arg("tz"), err); if (!err.length()) { setenv("TZ", server.arg("tz").c_str(), 1); tzset(); } }
-  if (!err.length()) setNum("wifi.idle_min", server.arg("idle").toInt(), err);
-  if (!err.length()) setNum("sleep.min", server.arg("sleep").toInt(), err);
+  if (!err.length() && server.arg("idle").length()) setNum("wifi.idle_min", server.arg("idle").toInt(), err);   // an emptied field keeps its value
+  if (!err.length() && server.arg("sleep").length()) setNum("sleep.min", server.arg("sleep").toInt(), err);
   if (!err.length()) setFlag("export.archive", server.hasArg("archive"), err);
   if (!err.length()) { setFlag("sound", server.hasArg("sound"), err); soundOn = cfg::flag("sound"); }
   if (err.length()) msg = "Not saved: " + err;
@@ -133,12 +133,12 @@ static void handleNote() {
       else { for (;;) { int c = 0, oldest = -1; auto &all = notesAll(); for (size_t i = 0; i < all.size(); i++) if (all[i].pinned) { c++; if (oldest < 0 || all[i].modified < all[oldest].modified) oldest = i; } if (c < 3) break; all[oldest].pinned = false; } n->pinned = true; }
       n->modified = time(nullptr); notesSave();
     }
-    else if (d == "archive") { n->archived = true; n->pinned = false; notesSave(); }
+    else if (d == "archive" && !n->audio.length()) { n->archived = true; n->pinned = false; notesSave(); }
     else if (d == "restore") { n->archived = false; n->exported = false; notesSave(); }
     else if (d == "edit" && !n->archived) { String t = server.arg("text"); t.trim(); if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); } }
   }
   uiNotesChanged();
-  server.sendHeader("Location", server.arg("back").length() ? server.arg("back") : "/");
+  server.sendHeader("Location", server.arg("back") == "/archive" ? "/archive" : "/");   // only our own two pages
   server.send(303, "text/plain", "");
 }
 
@@ -151,6 +151,8 @@ static void handleNew() {
   server.send(303, "text/plain", "");
 }
 
+static String indented(String t) { t.replace("\n", "\n  "); return t; }   // a note's own line breaks stay inside its list item
+
 static void handleExport() {
   netTouch();
   String p = "# " + cfg::str("device.name") + ", exported " + when(time(nullptr)) + "\n\n";
@@ -159,7 +161,7 @@ static void handleExport() {
   for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && !all[i].audio.length() && all[i].text.length()) idx.push_back(i);
   std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created < all[b].created; });
   bool archive = cfg::flag("export.archive");
-  for (int i : idx) { Note &n = all[i]; p += "- **" + when(n.created) + "**\n  " + n.text + "\n"; n.exported = true; if (archive) { n.archived = true; n.pinned = false; } }
+  for (int i : idx) { Note &n = all[i]; p += "- **" + when(n.created) + "**\n  " + indented(n.text) + "\n"; n.exported = true; if (archive) { n.archived = true; n.pinned = false; } }
   if (!idx.empty()) notesSave();
   uiNotesChanged();
   server.sendHeader("Content-Disposition", "attachment; filename=brainos-export.md");
@@ -170,7 +172,7 @@ static void handleUpdate() {
   netTouch();
   bool install = server.arg("do") == "install" && updInfo().available;
   updateRequest(install);
-  String p = "<!doctype html><html><head><meta charset='utf-8'><meta http-equiv='refresh' content='" + String(install ? 90 : 12) + ";url=/'><style>" + String(CSS) + "</style></head><body><h1>" + String(install ? "Installing" : "Checking for an update") + "</h1><p class='s'>" + (install ? "The board downloads the release, checks it and restarts. This page comes back in a minute and a half." : "This page comes back in a few seconds.") + "</p></body></html>";
+  String p = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta http-equiv='refresh' content='" + String(install ? 90 : 12) + ";url=/'><style>" + String(CSS) + "</style></head><body><h1>" + String(install ? "Installing" : "Checking for an update") + "</h1><p class='s'>" + (install ? "The board downloads the release, checks it and restarts. This page comes back in a minute and a half." : "This page comes back in a few seconds.") + "</p></body></html>";
   server.send(200, "text/html; charset=utf-8", p);
 }
 
@@ -191,7 +193,7 @@ static void handleMd() {
   std::vector<int> idx;
   for (size_t i = 0; i < all.size(); i++) idx.push_back(i);
   std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created > all[b].created; });
-  for (int i : idx) { const Note &n = all[i]; p += "- **" + when(n.created) + "**" + (n.archived ? " (archived)" : "") + (n.pinned ? " (pinned)" : "") + "\n  " + (n.audio.length() ? "(recording waiting for transcription)" : n.text) + "\n"; }
+  for (int i : idx) { const Note &n = all[i]; p += "- **" + when(n.created) + "**" + (n.archived ? " (archived)" : "") + (n.pinned ? " (pinned)" : "") + "\n  " + (n.audio.length() ? String("(recording waiting for transcription)") : indented(n.text)) + "\n"; }
   server.sendHeader("Content-Disposition", "attachment; filename=notes.md");
   server.send(200, "text/markdown; charset=utf-8", p);
 }

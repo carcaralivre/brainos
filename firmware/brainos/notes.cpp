@@ -64,8 +64,7 @@ void notesSave() {
   if (!f) { Serial.println("notes: can't write"); return; }
   for (auto &n : items) f.println(lineOf(n));
   f.close();
-  LittleFS.remove(FILE_NAME);
-  LittleFS.rename("/notes.tmp", FILE_NAME);
+  LittleFS.rename("/notes.tmp", FILE_NAME);   // rename replaces the old file in one step: a power cut keeps one or the other
 }
 
 Note *notesFind(const String &id) {
@@ -73,9 +72,9 @@ Note *notesFind(const String &id) {
   return nullptr;
 }
 
-Note &notesAdd(const String &text, const String &audio, uint16_t secs) {
+Note &notesAdd(const String &text, const String &audio, uint16_t secs, const String &id) {
   Note n;
-  n.id = notesNewId();
+  n.id = id.length() ? id : notesNewId();
   n.text = text;
   n.audio = audio;
   n.secs = secs;
@@ -99,11 +98,6 @@ int notesCount(bool archived) {
   int c = 0;
   for (auto &n : items) if (n.archived == archived) c++;
   return c;
-}
-
-Note *notesPinned() {
-  for (auto &n : items) if (n.pinned && !n.archived) return &n;
-  return nullptr;
 }
 
 int notesPending() {

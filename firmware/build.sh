@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build (and flash) BrainOS for the reTerminal Sticky. Mirrors upstream's upload.sh.
 #   firmware/build.sh            build and flash over USB
-#   firmware/build.sh build      build only, into firmware/brainos/build
+#   firmware/build.sh build      build only, into ~/.cache/brainos-build
 #   PORT=/dev/cu.usbmodemXXXX firmware/build.sh
 set -euo pipefail
 cd "$(dirname "$0")/brainos"
