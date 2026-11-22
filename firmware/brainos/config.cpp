@@ -20,7 +20,7 @@ struct CfgKey {
 static const CfgKey KEYS[] = {
   // name               nvs          type       secret check      min  max    default
   {"wifi.networks",     "wifi",      CFG_WIFI,  true,  CHK_TEXT,  0,   0,     ""},
-  {"device.name",       "dev_name",  CFG_STR,   false, CHK_TEXT,  0,   40,    "Brain do Eduardo"},
+  {"device.name",       "dev_name",  CFG_STR,   false, CHK_TEXT,  0,   40,    "BrainOS"},
   {"device.timezone",   "dev_tz",    CFG_STR,   false, CHK_TZ,    3,   63,    "<-03>3"},
   {"stt.api_key",       "stt_key",   CFG_STR,   true,  CHK_TOKEN, 20,  256,   ""},
   {"stt.model",         "stt_model", CFG_STR,   false, CHK_TOKEN, 1,   64,    "openai/whisper-large-v3"},

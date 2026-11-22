@@ -260,14 +260,14 @@ static void drawNote() {
   auto lines = wrapLines(F_S12, body, W - 48, (by - 16 - (BAR + 60)) / 26);   // the text stops above the buttons
   for (size_t i = 0; i < lines.size(); i++) text(24, BAR + 60 + i * 26, F_S12, lines[i].c_str());
   if (n->archived) {   // an archived note is neither pinned nor edited: Restore | Delete only
-    uiFooter("Restore", false, deleteArmed ? "Confirm" : "Delete", deleteArmed);
+    uiFooter("Restore", false, deleteArmed ? "Yes, delete" : "Delete", deleteArmed);
     return;
   }
   bool waiting = n->audio.length() > 0;   // a recording still to be transcribed is neither edited nor archived
   button(24, by, bw, 52, n->pinned ? "Unpin" : "Pin", n->pinned);
   if (!waiting) button(24 + bw + 16, by, bw, 52, "Edit", false);
   if (!waiting) button(24, by + 64, bw, 52, "Archive", false);
-  button(24 + bw + 16, by + 64, bw, 52, deleteArmed ? "Confirm" : "Delete", deleteArmed);
+  button(24 + bw + 16, by + 64, bw, 52, deleteArmed ? "Yes, delete" : "Delete", deleteArmed);
 }
 
 // ---------------------------------------------------------------- settings
@@ -303,14 +303,28 @@ static void drawWifi() {
   if (wifiMsg.length()) textCentre(W / 2, FOOT_Y - 24, F_S9, fitted(F_S9, wifiMsg, W - 48).c_str());
 }
 
+static void iconSignal(int x, int y, int bars) {   // four bars, 4 px wide, rising to 16 px; the weak ones hollow
+  for (int k = 0; k < 4; k++) {
+    int h = 4 + 4 * k;
+    if (k < bars) canvas->fillRect(x + k * 6, y + 16 - h, 4, h, INK);
+    else canvas->drawRect(x + k * 6, y + 16 - h, 4, h, INK);
+  }
+}
+static void iconLock(int x, int y) {   // 12 x 16: a small padlock
+  canvas->drawRoundRect(x + 2, y, 8, 9, 3, INK);
+  canvas->fillRect(x, y + 7, 12, 9, INK);
+}
 static void drawWifiScan() {
   topBar("Networks", true);
   if (seen.empty()) textCentre(W / 2, H / 2, F_S12, "None found");
-  for (size_t i = 0; i < seen.size() && i < 9; i++) {
-    String bars; int b = seen[i].rssi > -55 ? 4 : seen[i].rssi > -67 ? 3 : seen[i].rssi > -78 ? 2 : 1;
-    for (int k = 0; k < 4; k++) bars += k < b ? "|" : ".";
-    settingsRow(i, fitted(F_S12, seen[i].ssid, W - 48 - 90).c_str(), (seen[i].secure ? "* " : "") + bars);
+  for (size_t i = 0; i < seen.size() && i < 8; i++) {
+    int bars = seen[i].rssi > -55 ? 4 : seen[i].rssi > -67 ? 3 : seen[i].rssi > -78 ? 2 : 1;
+    settingsRow(i, fitted(F_S12, seen[i].ssid, W - 48 - 70).c_str(), "");
+    int y = BAR + 12 + i * SROW + 28;
+    iconSignal(W - 24 - 22, y, bars);
+    if (seen[i].secure) iconLock(W - 24 - 22 - 24, y);
   }
+  button(24, FOOT_Y, W - 48, 52, "Scan again", false);
 }
 
 static void drawAbout() {
@@ -366,7 +380,7 @@ static void joinNetwork(const String &ssid, const String &pass) {
 static void drawArchive() {
   topBar("Archive", true);
   drawList(true);
-  if (notesCount(true)) button(24, FOOT_Y, W - 48, 52, deleteAllArmed ? "Confirm" : "Delete all", deleteAllArmed);
+  if (notesCount(true)) button(24, FOOT_Y, W - 48, 52, deleteAllArmed ? "Yes, delete all" : "Delete all", deleteAllArmed);
 }
 
 static bool listeningDone;
@@ -504,8 +518,9 @@ void uiTap(int x, int y) {
     }
     case SCREEN_WIFI_SCAN: {
       if (leftIcon(x, y)) { uiGo(SCREEN_WIFI); break; }
+      if (inFooter(y)) { startWifiScan(); break; }
       int i = settingsRowAt(y);
-      if (i >= 0 && i < (int)seen.size() && i < 9) {
+      if (i >= 0 && i < (int)seen.size() && i < 8) {
         joinSsid = seen[i].ssid;
         if (!seen[i].secure) joinNetwork(joinSsid, "");
         else { keyboardBegin(kb, "", ("Password for " + joinSsid).c_str(), "", 64); keyboardSecret(kb); kbPurpose = 2; kbBack = SCREEN_WIFI_SCAN; uiGo(SCREEN_KEYBOARD); }
