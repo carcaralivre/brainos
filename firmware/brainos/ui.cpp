@@ -441,7 +441,7 @@ void uiTap(int x, int y) {
   switch (screen) {
     case SCREEN_LOCK:
       for (auto &b : lockBoxes) if (y >= b.y && y < b.y + b.h) { openId = b.id; deleteArmed = false; uiGo(SCREEN_NOTE); return; }
-      uiGo(lockFrom);
+      uiGo(SCREEN_NOTES);   // a tap opens the list; the OK button goes back to where the lock came from
       break;
     case SCREEN_SAVED: uiGo(SCREEN_NOTES); break;
     case SCREEN_NOTES: {
