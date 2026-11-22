@@ -311,10 +311,8 @@ static void drawWifi() {
     settingsRow(i, fitted(F_S12, nets[i].ssid, W - 48 - 170).c_str(), "");
     int y = BAR + 12 + i * SROW;
     if (on) textRight(W - 72, y + 44, F_S9, "connected");
-    if ((int)i == forgetArmed) { canvas->fillRoundRect(W - 24 - 36, y + 18, 36, 36, 8, INK); canvas->setTextColor(PAPER); }
-    canvas->drawRoundRect(W - 24 - 36, y + 18, 36, 36, 8, INK);
-    for (int k = 0; k < 16; k++) { canvas->fillRect(W - 50 + k, y + 28 + k, 2, 2, (int)i == forgetArmed ? PAPER : INK); canvas->fillRect(W - 50 + 15 - k, y + 28 + k, 2, 2, (int)i == forgetArmed ? PAPER : INK); }
-    canvas->setTextColor(INK);
+    int t = (int)i == forgetArmed ? 4 : 2;   // armed: a heavier X
+    for (int k = 0; k < 16; k++) { canvas->fillRect(W - 48 + k, y + 28 + k, t, t, INK); canvas->fillRect(W - 48 + 15 - k, y + 28 + k, t, t, INK); }
   }
   if (nets.empty()) text(24, BAR + 56, F_S12, "No saved networks");
   button(24, FOOT_Y, W - 48, 52, "Add a network", false);
@@ -563,7 +561,7 @@ void uiTap(int x, int y) {
       if (i >= 0 && i < (int)seen.size() && i < (int)SCAN_A_PAGE) {
         joinSsid = seen[i].ssid;
         if (!seen[i].secure) joinNetwork(joinSsid, "", SCREEN_WIFI_SCAN);
-        else { keyboardBegin(kb, "", ("Password for " + joinSsid).c_str(), "", 64); keyboardSecret(kb); kbPurpose = 2; kbBack = SCREEN_WIFI_SCAN; uiGo(SCREEN_KEYBOARD); }
+        else { keyboardBegin(kb, "", ("Password for " + joinSsid).c_str(), "", 64); kbPurpose = 2; kbBack = SCREEN_WIFI_SCAN; uiGo(SCREEN_KEYBOARD); }
       }
       break;
     }

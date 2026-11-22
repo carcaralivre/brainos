@@ -93,13 +93,11 @@ static int keyboardKeys(const Keyboard &kb, int keysY, KeyBox *out) {
 void keyboardBegin(Keyboard &kb, const String &text, const char *label, const char *hint, int maxLen) {
   kb.text = text; kb.label = label; kb.hint = hint; kb.note = "";
   kb.layer = 0; kb.shift = text.length() ? 0 : 1; kb.shiftAt = 0; kb.maxLen = maxLen;
-  kb.masked = kb.reveal = false;
+
 }
 
-void keyboardSecret(Keyboard &kb) { kb.masked = true; kb.reveal = false; kb.shift = 0; }
-
 static void keyboardAutoShift(Keyboard &kb) {
-  if (kb.shift == 2 || kb.masked) return;
+  if (kb.shift == 2) return;
   String t = kb.text;
   kb.shift = !t.length() || t.endsWith(". ") || t.endsWith("? ") || t.endsWith("! ") ? 1 : 0;
   kb.shiftAt = 0;
@@ -111,20 +109,6 @@ static void keyboardField(Keyboard &kb, int x, int y, int w, int h) {
   const GFXfont *f = F_S12;
   const int LINE = 30, tx = x + 14, tw = w - 32;
   int maxLines = max(1, (h - 10) / LINE), top = maxLines == 1 ? y + (h - LINE) / 2 : y + 6;
-  if (kb.masked && !kb.reveal) {
-    const int DOT = 18, perLine = max(1, (tw - 8) / DOT);
-    int n = kb.text.length(), lines = max(1, (n + perLine - 1) / perLine), first = max(0, lines - maxLines);
-    int baseline = top + 21, cx = tx;
-    for (int i = first * perLine; i < n; i++) {
-      int row = i / perLine - first, col = i % perLine;
-      baseline = top + row * LINE + 21;
-      canvas->fillCircle(tx + col * DOT + 6, baseline - 7, 6, INK);
-      cx = tx + (col + 1) * DOT;
-    }
-    if (!n) text(tx + 8, baseline, f, fitted(f, kb.hint, tw - 8).c_str());
-    canvas->fillRect(cx, baseline - 19, 3, 25, INK);
-    return;
-  }
   std::vector<String> lines = wrapped(f, kb.text, tw);
   if (kb.text.endsWith(" ") && lines.size()) lines.back() += " ";
   if (lines.empty()) lines.push_back("");
@@ -182,11 +166,9 @@ static void keyboardDrawKeys(Keyboard &kb, int top) {
   }
 }
 
-// The screen: a centred title (Show/Hide at the right for a password), the field down to the
-// standard Cancel | Done row, then the keys.
+// The screen: a centred title, the field down to the standard Cancel | Done row, then the keys.
 void keyboardDraw(Keyboard &kb) {
   uiTitle(fitted(F_B12, kb.label, W - 160).c_str());
-  if (kb.masked) textRight(W - 24, 38, F_B9, kb.reveal ? "Hide" : "Show");
   int keysAt = H - keyboardHeight();
   kb.buttonsY = keysAt - UI_GAP - UI_BTN;   // the same gap above and below the buttons
   int fieldY = UI_BAR + 8, fieldBottom = kb.buttonsY - UI_GAP;
@@ -198,7 +180,6 @@ void keyboardDraw(Keyboard &kb) {
 }
 
 KbResult keyboardTap(Keyboard &kb, int x, int y) {
-  if (y < UI_BAR && kb.masked && x > W - 120) { kb.reveal = !kb.reveal; return KB_CHANGED; }
   if (y >= kb.buttonsY - 8 && y < kb.buttonsY + UI_BTN + 8) return x < W / 2 ? KB_CANCEL : KB_DONE;
   if (y < kb.keysTop - 8) return KB_NONE;
   KeyBox keys[KB_MAX_KEYS];

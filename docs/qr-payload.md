@@ -30,7 +30,7 @@ code holds one JSON object:
 | `pad` | spaces, ignored: every part of a batch is padded to the same length, so all its codes have the same density |
 
 The export holds every note that is not in the Archive, oldest first. The board shows the
-parts in order, about 2 seconds each, and starts again from part 1 until Done is tapped
+parts in order, about 1 second each, and starts again from part 1 until Done is tapped
 (or OK is pressed). A note that would not fit a part on its own is cut and ends with `…`.
 
 ## Reading

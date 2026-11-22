@@ -12,11 +12,9 @@ struct Keyboard {
   int shift = 0;          // 0 off, 1 the next letter, 2 caps lock
   uint32_t shiftAt = 0;
   int maxLen = 120;
-  bool masked = false, reveal = false;   // a password: dots, a Show key
   int keysTop = 0, buttonsY = 0;   // where the keys and the Cancel | Done row were drawn
 };
 void keyboardBegin(Keyboard &kb, const String &text, const char *label, const char *hint, int maxLen);
-void keyboardSecret(Keyboard &kb);
 void keyboardDraw(Keyboard &kb);                   // the title, the field, Cancel | Done, the keys (bottom of the screen)
 KbResult keyboardTap(Keyboard &kb, int x, int y);
 String fitted(const GFXfont *font, String s, int width);

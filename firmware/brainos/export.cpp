@@ -10,7 +10,7 @@
 #include "ui.h"
 
 static const size_t PART_MAX = 950;        // bytes of JSON a QR holds comfortably at version 25
-static const uint32_t INTERVAL_MS = 2000;
+static const uint32_t INTERVAL_MS = 1000;   // a partial refresh takes about 0.6 s, so this is close to the floor
 static std::vector<String, PsAlloc<String>> parts;
 static std::vector<String, PsAlloc<String>> ids;
 static int part;
@@ -92,7 +92,8 @@ void exportDraw(bool armed) {
   snprintf(b, sizeof(b), "%d note%s", (int)ids.size(), ids.size() == 1 ? "" : "s");
   textCentre(W / 2, qrY + qrPx + 86, F_S12, b);
   textCentre(W / 2, UI_FOOT_Y - 20, F_S9, "Instructions at brain.local");
-  const char *label = !armed ? "Done" : cfg::flag("export.archive") ? "Yes, archive all" : "Yes, mark all exported";
+  bool archive = cfg::flag("export.archive");
+  const char *label = !armed ? (archive ? "Archive all" : "Mark all exported") : archive ? "Yes, archive all" : "Yes, mark all exported";
   uiButton(UI_MARGIN, UI_FOOT_Y, W - 2 * UI_MARGIN, UI_BTN, label, armed);
 }
 

@@ -18,7 +18,7 @@ Com o aparelho na rede, abra http://brain.local no iPhone ou no Mac: lá dá par
 3. O Wi-Fi fica ligado enquanto o aparelho está acordado. Na página brain.local dá para limitar a N minutos após o último toque.
 
 ## Exportar para o celular
-Settings → Export: todas as notas que não estão no Archive vão nos QR codes, mostrados em sequência. No iPhone, abra a página leitora (https://carcaralivre.github.io/brainos-reader/), toque em Scan e aponte para a tela; a página junta as partes em qualquer ordem. Toque em Done no aparelho quando terminar e confirme ("Yes, archive all"): as notas vão para o Archive (configurável). A tela diz "Instructions at brain.local".
+Settings → Export: todas as notas que não estão no Archive vão nos QR codes, mostrados em sequência, um por segundo. No iPhone, abra a página leitora (https://carcaralivre.github.io/brainos-reader/), toque em Scan e aponte para a tela; a página junta as partes em qualquer ordem. Toque em "Archive all" no aparelho quando terminar e confirme ("Yes, archive all"): as notas vão para o Archive (configurável). A tela diz "Instructions at brain.local".
 
 ## Atualizar
 Settings → About → Check for update; se houver versão nova, aparece o botão Install ali mesmo. O aparelho só procura atualização quando você pede. Também dá para fazer pela página brain.local. Se a versão nova não ligar, o aparelho volta sozinho para a anterior.
