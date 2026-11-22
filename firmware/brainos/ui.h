@@ -17,3 +17,6 @@ void uiGo(Screen s);         // open a screen and draw it
 void uiShowSaved(int secs);  // after a recording: "Saved" for a moment
 void uiNotesChanged();
 bool uiKeyboardShown();
+void uiButton(int x, int y, int w, int h, const char *label, bool filled);   // the standard button: 52 px tall, rounded
+void uiTitle(const char *title);   // the centred title of the top bar
+bool uiListeningDone();            // OK let go: the listening screen says "Saving…"

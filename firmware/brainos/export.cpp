@@ -30,7 +30,7 @@ bool exportStart() {
   char b[8]; snprintf(b, sizeof(b), "%04x", (unsigned)(esp_random() & 0xFFFF)); batch = b;
   auto &all = notesAll();
   std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && !all[i].exported && !all[i].audio.length() && all[i].text.length()) idx.push_back(i);
+  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && !all[i].audio.length() && all[i].text.length()) idx.push_back(i);   // everything that is not archived, exported before or not
   if (idx.empty()) return false;
   std::sort(idx.begin(), idx.end(), [&](int a, int c) { return all[a].created < all[c].created; });
   String head = "{\"v\":1,\"b\":\"" + batch + "\",\"i\":I,\"n\":N,\"dev\":" + pj::esc(cfg::str("device.name")) + ",\"notes\":[";
@@ -79,7 +79,7 @@ static void qrDraw(esp_qrcode_handle_t q) {
 }
 
 void exportDraw() {
-  if (parts.empty()) { textCentre(W / 2, H / 2, F_S12, "Nothing new to export"); return; }
+  if (parts.empty()) { textCentre(W / 2, H / 2, F_S12, "Nothing to export"); return; }
   qrX = 24; qrY = 70; qrPx = W - 48;
   esp_qrcode_config_t c = ESP_QRCODE_CONFIG_DEFAULT();
   c.display_func = qrDraw;
@@ -91,12 +91,7 @@ void exportDraw() {
   textCentre(W / 2, qrY + qrPx + 50, F_B18, b);
   snprintf(b, sizeof(b), "%d note%s", (int)ids.size(), ids.size() == 1 ? "" : "s");
   textCentre(W / 2, qrY + qrPx + 86, F_S12, b);
-  textCentre(W / 2, H - 118, F_S9, "Point the reader page at the screen.");
-  textCentre(W / 2, H - 94, F_S9, cfg::flag("export.archive") ? "Done moves these notes to the Archive." : "Done marks these notes as exported.");
-  canvas->fillRoundRect(24, H - 76, W - 48, 52, 8, INK);
-  canvas->setTextColor(PAPER);
-  textCentre(W / 2, H - 76 + 32, F_B12, "Done");
-  canvas->setTextColor(INK);
+  uiButton(24, H - 76, W - 48, 52, "Done", false);
 }
 
 void exportTick() {

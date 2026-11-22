@@ -1,5 +1,6 @@
 #include "keyboard.h"
 #include "screen.h"
+#include "ui.h"
 
 static bool due;
 static uint32_t askedAt;
@@ -38,7 +39,7 @@ std::vector<String> wrapped(const GFXfont *font, const String &s, int width) {
   return lines;
 }
 
-enum KeyCode { K_SHIFT = 1, K_BACK, K_LAYER, K_DONE, K_MORE, K_ACCENTS };
+enum KeyCode { K_SHIFT = 1, K_BACK, K_LAYER, K_MORE, K_ACCENTS };
 struct KeyBox { int16_t x, y, w, h; uint16_t code; };
 static const int PITCH = 80, KB_NOTE_H = 26, KB_MAX_KEYS = 48;
 static int keyboardHeight() { return KB_NOTE_H + 4 * PITCH + 2; }
@@ -83,17 +84,16 @@ static int keyboardKeys(const Keyboard &kb, int keysY, KeyBox *out) {
   add(2, H2 - side, H2, H2, K_BACK);
   add(3, 0, 3, 20, K_LAYER);
   add(3, 3, 5, 20, ',');
-  add(3, 5, 12, 20, ' ');
-  add(3, 12, 14, 20, K_ACCENTS);
-  add(3, 14, 16, 20, '.');
-  add(3, 16, 20, 20, K_DONE);
+  add(3, 5, 16, 20, ' ');
+  add(3, 16, 18, 20, K_ACCENTS);
+  add(3, 18, 20, 20, '.');
   return n;
 }
 
 void keyboardBegin(Keyboard &kb, const String &text, const char *label, const char *hint, int maxLen) {
   kb.text = text; kb.label = label; kb.hint = hint; kb.note = "";
   kb.layer = 0; kb.shift = text.length() ? 0 : 1; kb.shiftAt = 0; kb.maxLen = maxLen;
-  kb.labelTop = -1; kb.masked = kb.reveal = false;
+  kb.masked = kb.reveal = false;
 }
 
 void keyboardSecret(Keyboard &kb) { kb.masked = true; kb.reveal = false; kb.shift = 0; }
@@ -145,7 +145,7 @@ static void keyboardDrawKeys(Keyboard &kb, int top) {
   int n = keyboardKeys(kb, kb.keysTop, keys);
   for (int i = 0; i < n; i++) {
     const KeyBox &k = keys[i];
-    bool filled = (k.code == K_SHIFT && kb.shift) || k.code == K_DONE;
+    bool filled = k.code == K_SHIFT && kb.shift;
     if (filled) canvas->fillRoundRect(k.x, k.y, k.w, k.h, 8, INK);
     else {
       canvas->drawRoundRect(k.x, k.y, k.w, k.h, 8, INK);
@@ -171,7 +171,6 @@ static void keyboardDrawKeys(Keyboard &kb, int top) {
       case K_LAYER: keyLabel(cx, cy, F_B12, kb.layer == 1 || kb.layer == 2 ? "ABC" : "?123", 8); break;
       case K_MORE: keyLabel(cx, cy, F_B12, kb.layer == 2 ? "?123" : "=\\<", 8); break;
       case K_ACCENTS: keyLabel(cx, cy, F_B12, kb.layer == 3 ? "abc" : "ãç", 7); break;
-      case K_DONE: keyLabel(cx, cy, F_B12, "Done", 8); break;
       case ' ': keyLabel(cx, cy, F_S9, "space", 5); break;
       default: {
         uint32_t c = kb.shift ? cpUpper(k.code, false) : k.code;
@@ -184,27 +183,25 @@ static void keyboardDrawKeys(Keyboard &kb, int top) {
   }
 }
 
-void keyboardDraw(Keyboard &kb, int top) {
-  kb.labelTop = top;
-  const GFXfont *bf = F_B12;
-  int cw = 112, sw = 102;
-  kb.cancelX = W - 12 - cw, kb.showX = kb.masked ? kb.cancelX - 12 - sw : kb.cancelX;
-  text(16, top + 32, bf, fitted(bf, kb.label, kb.showX - 30).c_str());
-  canvas->drawRoundRect(kb.cancelX, top + 6, cw, 40, 8, INK);
-  textCentre(kb.cancelX + cw / 2, top + 33, bf, "Cancel");
-  if (kb.masked) {
-    canvas->drawRoundRect(kb.showX, top + 6, sw, 40, 8, INK);
-    textCentre(kb.showX + sw / 2, top + 33, bf, kb.reveal ? "Hide" : "Show");
-  }
-  int keysAt = H - keyboardHeight(), fieldY = top + 54;
-  int fieldH = constrain(keysAt - fieldY - 4, 52, 4 * 30 + 12);
-  keyboardField(kb, 12, fieldY, W - 24, fieldH);
+// The screen: a centred title (Show/Hide at the right for a password), the field down to the
+// standard Cancel | Done row, then the keys.
+static const int KB_BAR = 56, KB_BTN_H = 52, KB_GAP = 16;
+void keyboardDraw(Keyboard &kb) {
+  uiTitle(fitted(F_B12, kb.label, W - 160).c_str());
+  if (kb.masked) textRight(W - 24, 38, F_B9, kb.reveal ? "Hide" : "Show");
+  int keysAt = H - keyboardHeight();
+  kb.buttonsY = keysAt - 12 - KB_BTN_H;
+  int fieldY = KB_BAR + 8;
+  keyboardField(kb, 24, fieldY, W - 48, kb.buttonsY - KB_GAP - fieldY);
+  int bw = (W - 48 - KB_GAP) / 2;
+  uiButton(24, kb.buttonsY, bw, KB_BTN_H, "Cancel", false);
+  uiButton(24 + bw + KB_GAP, kb.buttonsY, bw, KB_BTN_H, "Done", false);
   keyboardDrawKeys(kb, keysAt);
 }
 
 KbResult keyboardTap(Keyboard &kb, int x, int y) {
-  if (kb.labelTop >= 0 && y >= kb.labelTop && y < kb.labelTop + 52 && x > kb.cancelX - 16) return KB_CANCEL;
-  if (kb.masked && kb.labelTop >= 0 && y >= kb.labelTop && y < kb.labelTop + 52 && x > kb.showX - 8) { kb.reveal = !kb.reveal; return KB_CHANGED; }
+  if (y < KB_BAR && kb.masked && x > W - 120) { kb.reveal = !kb.reveal; return KB_CHANGED; }
+  if (y >= kb.buttonsY - 8 && y < kb.buttonsY + KB_BTN_H + 8) return x < W / 2 ? KB_CANCEL : KB_DONE;
   if (y < kb.keysTop - 8) return KB_NONE;
   KeyBox keys[KB_MAX_KEYS];
   int n = keyboardKeys(kb, kb.keysTop, keys), best = -1, bestDist = 1 << 20;
@@ -234,7 +231,6 @@ KbResult keyboardTap(Keyboard &kb, int x, int y) {
     case K_LAYER: kb.layer = kb.layer == 1 || kb.layer == 2 ? 0 : 1; return KB_CHANGED;
     case K_MORE: kb.layer = kb.layer == 2 ? 1 : 2; return KB_CHANGED;
     case K_ACCENTS: kb.layer = kb.layer == 3 ? 0 : 3; return KB_CHANGED;
-    case K_DONE: return KB_DONE;
   }
   if (utf8Count(kb.text.c_str()) >= kb.maxLen) return KB_NONE;
   uint32_t c = kb.shift ? cpUpper(code, false) : code;

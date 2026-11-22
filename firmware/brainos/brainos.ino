@@ -42,7 +42,11 @@ void logf(const char *fmt, ...) {
 
 // ---------------------------------------------------------------- recording
 
-static bool keepRecording() { return okDown(); }
+static bool keepRecording() {
+  if (okDown()) return true;
+  if (uiListeningDone()) uiRender(false);   // "Saving…" the moment OK is let go
+  return false;
+}
 
 static void recordNote() {
   beep(2600, 40);
@@ -65,7 +69,8 @@ static void recordNote() {
 
 // Settings -> Update: a check, or an install, run on the loop (Update writes flash: not a PSRAM-stack task).
 static bool updCheckAsk, updInstallAsk;
-void updateRequest(bool install) { if (install) updInstallAsk = true; else updCheckAsk = true; netTouch(); }
+bool updateQueued() { return updCheckAsk || updInstallAsk; }
+void updateRequest(bool install) { if (install) updInstallAsk = true; else updCheckAsk = true; netTouch(); uiRender(false); }
 static void updateTick() {
   static uint32_t lastAuto;
   if (updCheckAsk || updInstallAsk) {

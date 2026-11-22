@@ -82,8 +82,8 @@ static void sendPage(const String &msg) {
   p += "<p class='s'><a href='/notes.md'>Download all notes (.md)</a> · <a href='/notes.json'>JSON</a>" + (arch ? " · " + String(arch) + " archived (<a href='/archive'>see</a>)" : String()) + "</p>";
 
   int fresh = 0;
-  for (auto &n : all) if (!n.archived && !n.exported && !n.audio.length() && n.text.length()) fresh++;
-  p += "<h2>Export</h2><p class='s'>" + String(fresh) + " new note" + (fresh == 1 ? "" : "s") + " not exported yet. Exporting here downloads them as Markdown and " + (cfg::flag("export.archive") ? "moves them to the Archive" : "marks them exported") + ", like the QR export on the board.</p>";
+  for (auto &n : all) if (!n.archived && !n.audio.length() && n.text.length()) fresh++;
+  p += "<h2>Export</h2><p class='s'>" + String(fresh) + " note" + (fresh == 1 ? "" : "s") + " to export. Exporting here downloads them as Markdown and " + (cfg::flag("export.archive") ? "moves them to the Archive" : "marks them exported") + ", like the QR export on the board.</p>";
   if (fresh) p += "<form method='post' action='/export'><input type='submit' value='Export new notes (.md)'></form>";
   UpdInfo u = updInfo();
   p += "<h2>Update</h2><p class='s'>This board: " + String(updVersion()) + (u.checkedMs ? ". " + html(u.status) : "") + "</p><form method='post' action='/update'><button name='do' value='check'>Check for update</button>" + (u.available ? "<button name='do' value='install' onclick='return confirm(\"Install " + html(u.latest) + "? The board restarts.\")'>Install " + html(u.latest) + "</button>" : String()) + "</form>";
@@ -128,14 +128,14 @@ static void handleNote() {
   String d = server.arg("do");
   if (n) {
     if (d == "delete") notesRemove(n->id);
-    else if (d == "pin") {
+    else if (d == "pin" && !n->archived) {
       if (n->pinned) n->pinned = false;
       else { for (;;) { int c = 0, oldest = -1; auto &all = notesAll(); for (size_t i = 0; i < all.size(); i++) if (all[i].pinned) { c++; if (oldest < 0 || all[i].modified < all[oldest].modified) oldest = i; } if (c < 3) break; all[oldest].pinned = false; } n->pinned = true; }
       n->modified = time(nullptr); notesSave();
     }
     else if (d == "archive") { n->archived = true; n->pinned = false; notesSave(); }
     else if (d == "restore") { n->archived = false; n->exported = false; notesSave(); }
-    else if (d == "edit") { String t = server.arg("text"); t.trim(); if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); } }
+    else if (d == "edit" && !n->archived) { String t = server.arg("text"); t.trim(); if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); } }
   }
   uiNotesChanged();
   server.sendHeader("Location", server.arg("back").length() ? server.arg("back") : "/");
@@ -156,7 +156,7 @@ static void handleExport() {
   String p = "# " + cfg::str("device.name") + ", exported " + when(time(nullptr)) + "\n\n";
   auto &all = notesAll();
   std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && !all[i].exported && !all[i].audio.length() && all[i].text.length()) idx.push_back(i);
+  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && !all[i].audio.length() && all[i].text.length()) idx.push_back(i);
   std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created < all[b].created; });
   bool archive = cfg::flag("export.archive");
   for (int i : idx) { Note &n = all[i]; p += "- **" + when(n.created) + "**\n  " + n.text + "\n"; n.exported = true; if (archive) { n.archived = true; n.pinned = false; } }
