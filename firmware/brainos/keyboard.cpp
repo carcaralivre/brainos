@@ -190,12 +190,10 @@ void keyboardDraw(Keyboard &kb, int top) {
   int cw = 112, sw = 102;
   kb.cancelX = W - 12 - cw, kb.showX = kb.masked ? kb.cancelX - 12 - sw : kb.cancelX;
   text(16, top + 32, bf, fitted(bf, kb.label, kb.showX - 30).c_str());
-  canvas->drawRoundRect(kb.cancelX, top + 6, cw, 40, 20, INK);
-  canvas->drawRoundRect(kb.cancelX + 1, top + 7, cw - 2, 38, 19, INK);
+  canvas->drawRoundRect(kb.cancelX, top + 6, cw, 40, 8, INK);
   textCentre(kb.cancelX + cw / 2, top + 33, bf, "Cancel");
   if (kb.masked) {
-    canvas->drawRoundRect(kb.showX, top + 6, sw, 40, 20, INK);
-    canvas->drawRoundRect(kb.showX + 1, top + 7, sw - 2, 38, 19, INK);
+    canvas->drawRoundRect(kb.showX, top + 6, sw, 40, 8, INK);
     textCentre(kb.showX + sw / 2, top + 33, bf, kb.reveal ? "Hide" : "Show");
   }
   int keysAt = H - keyboardHeight(), fieldY = top + 54;

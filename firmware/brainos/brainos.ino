@@ -116,7 +116,7 @@ static void serialCommand(char *line) {
   int Y, M, D, h, m, x, y;
   if (!strcmp(line, "shot")) shot();
   else if (!strcmp(line, "stats")) { logHeap("stats"); Serial.printf("stats: refreshes full %d partial %d, uptime %lu s, screen %d, notes %d, pending %d\n", refreshCount(true), refreshCount(false), millis() / 1000, screen, notesCount(false), notesPending()); }
-  else if (!strcmp(line, "sleep")) { updMarkGood("sleep"); uiSaveForSleep(); screenSleep(); deepSleep(); }
+  else if (!strcmp(line, "sleep")) { updMarkGood("sleep"); uiLock(); uiRender(true); uiSaveForSleep(); screenSleep(); deepSleep(); }
   else if (sscanf(line, "time %d-%d-%d %d:%d", &Y, &M, &D, &h, &m) == 5) {
     struct tm t = {}; t.tm_year = Y - 1900; t.tm_mon = M - 1; t.tm_mday = D; t.tm_hour = h; t.tm_min = m;
     time_t secs = mktime(&t); struct timeval tv = {secs, 0}; settimeofday(&tv, nullptr);
@@ -186,7 +186,7 @@ void setup() {
   sttBegin();
   webBegin();
   esp_sleep_wakeup_cause_t why = esp_sleep_get_wakeup_cause();
-  if (why == ESP_SLEEP_WAKEUP_EXT1 && uiRestoreAfterSleep()) uiRender(false);  // the picture stayed: back where it was
+  if (why == ESP_SLEEP_WAKEUP_EXT1 && uiRestoreAfterSleep()) uiRender(false);  // the lock screen stayed; unlocking goes back where it was
   else { screen = SCREEN_LOCK; uiRender(true); }
   lastActivity = millis();
   logHeap("ready");
@@ -207,7 +207,7 @@ void loop() {
     case BTN_OK_HOLD: recordNote(); break;
     case BTN_MOVE: beep(2600, 30); uiMove(bp.move); break;
     case BTN_BOTH: beep(2600, 30); uiHome(); break;
-    case BTN_BOTH_LONG: beep(1300, 120); updMarkGood("sleep"); uiSaveForSleep(); screenSleep(); deepSleep(); break;
+    case BTN_BOTH_LONG: beep(1300, 120); updMarkGood("sleep"); uiLock(); uiRender(true); uiSaveForSleep(); screenSleep(); deepSleep(); break;
     default: break;
   }
   if (screen == SCREEN_SAVED) { if (!savedAt) savedAt = millis(); else if (millis() - savedAt > 2500) { savedAt = 0; uiGo(SCREEN_NOTES); } }
@@ -229,7 +229,9 @@ void loop() {
   }
   long sleepMin = cfg::num("sleep.min");
   if (sleepMin > 0 && !now.usb && millis() - lastActivity > (uint32_t)sleepMin * 60000 && !sttRunning() && screen != SCREEN_EXPORT) {
-    updMarkGood("sleep");   // on battery only: the picture stays, the board wakes up where it was
+    updMarkGood("sleep");   // on battery only: the lock screen stays on; a click wakes it, another unlocks where it was
+    uiLock();
+    uiRender(true);
     uiSaveForSleep();
     screenSleep();
     deepSleep();

@@ -5,12 +5,14 @@
 #include "config.h"
 #include "net.h"
 #include "notes.h"
+#include "ota.h"
 #include "provjson.h"
 #include "stt.h"
 
 static WebServer server(80);
 static bool started;
 extern void uiNotesChanged();
+extern void updateRequest(bool install);
 extern const char *const VERSION;
 
 static String html(const String &s) {
@@ -47,7 +49,7 @@ static const char *CSS =
   ".n p{margin:0 0 8px;white-space:pre-wrap;font-size:17px}.n .m{color:#777;font-size:13px}"
   ".n form{display:inline}button,input[type=submit]{font:inherit;font-size:14px;padding:6px 12px;border-radius:8px;border:1px solid #bbb;background:#fff;margin:2px 4px 0 0}"
   "button.d{color:#b00}input[type=text],input[type=password],input[type=number]{font:inherit;width:100%;box-sizing:border-box;padding:8px;border:1px solid #bbb;border-radius:8px;margin:4px 0 10px}"
-  "label{font-size:14px;color:#444}.pend{color:#a60}.pin{font-size:13px;color:#06c}a{color:#06c}";
+  "label{font-size:14px;color:#444}.pend{color:#a60}.pin{font-size:13px;color:#06c}a{color:#06c}textarea{font:inherit;width:100%;box-sizing:border-box;padding:8px;border:1px solid #bbb;border-radius:8px;margin:4px 0 6px;min-height:70px}details{margin-top:6px}summary{cursor:pointer;font-size:14px;color:#06c}";
 
 static void sendPage(const String &msg) {
   String p = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + html(cfg::str("device.name")) + "</title><style>" + CSS + "</style></head><body>";
@@ -58,6 +60,7 @@ static void sendPage(const String &msg) {
   if (!sttConfigured()) p += "<p class='pend'>No OpenRouter key yet: recordings wait until one is set below.</p>";
   else if (strlen(sttLastError())) p += "<p class='pend'>Last transcription problem: " + html(sttLastError()) + "</p>";
 
+  p += "<h2>New note</h2><form method='post' action='/new'><textarea name='text' placeholder='Type a note'></textarea><input type='submit' value='Save note'></form>";
   p += "<h2>Notes</h2>";
   auto &all = notesAll();
   std::vector<int> idx;
@@ -71,11 +74,19 @@ static void sendPage(const String &msg) {
     else p += "<p>" + html(n.text) + "</p>";
     p += "<div class='m'>" + when(n.created) + (n.pinned ? " · <span class='pin'>pinned</span>" : "") + "</div>";
     p += "<form method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'>";
-    p += "<button name='do' value='pin'>" + String(n.pinned ? "Unpin" : "Pin") + "</button><button name='do' value='archive'>Archive</button><button class='d' name='do' value='delete' onclick='return confirm(\"Delete this note?\")'>Delete</button></form></div>";
+    p += "<button name='do' value='pin'>" + String(n.pinned ? "Unpin" : "Pin") + "</button><button name='do' value='archive'>Archive</button><button class='d' name='do' value='delete' onclick='return confirm(\"Delete this note?\")'>Delete</button></form>";
+    if (!n.audio.length()) p += "<details><summary>Edit</summary><form method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text'>" + html(n.text) + "</textarea><input type='submit' value='Save'></form></details>";
+    p += "</div>";
   }
   int arch = notesCount(true);
   p += "<p class='s'><a href='/notes.md'>Download all notes (.md)</a> · <a href='/notes.json'>JSON</a>" + (arch ? " · " + String(arch) + " archived (<a href='/archive'>see</a>)" : String()) + "</p>";
 
+  int fresh = 0;
+  for (auto &n : all) if (!n.archived && !n.exported && !n.audio.length() && n.text.length()) fresh++;
+  p += "<h2>Export</h2><p class='s'>" + String(fresh) + " new note" + (fresh == 1 ? "" : "s") + " not exported yet. Exporting here downloads them as Markdown and " + (cfg::flag("export.archive") ? "moves them to the Archive" : "marks them exported") + ", like the QR export on the board.</p>";
+  if (fresh) p += "<form method='post' action='/export'><input type='submit' value='Export new notes (.md)'></form>";
+  UpdInfo u = updInfo();
+  p += "<h2>Update</h2><p class='s'>This board: " + String(updVersion()) + (u.checkedMs ? ". " + html(u.status) : "") + "</p><form method='post' action='/update'><button name='do' value='check'>Check for update</button>" + (u.available ? "<button name='do' value='install' onclick='return confirm(\"Install " + html(u.latest) + "? The board restarts.\")'>Install " + html(u.latest) + "</button>" : String()) + "</form>";
   p += "<h2>Settings</h2><form method='post' action='/settings'>";
   p += "<label>OpenRouter API key " + String(sttConfigured() ? "(set; leave empty to keep)" : "(not set)") + "</label><input type='password' name='key' placeholder='sk-or-...' autocomplete='off'>";
   p += "<label>Speech-to-text model</label><input type='text' name='model' value='" + html(cfg::str("stt.model")) + "'>";
@@ -123,11 +134,44 @@ static void handleNote() {
       n->modified = time(nullptr); notesSave();
     }
     else if (d == "archive") { n->archived = true; n->pinned = false; notesSave(); }
-    else if (d == "restore") { n->archived = false; notesSave(); }
+    else if (d == "restore") { n->archived = false; n->exported = false; notesSave(); }
+    else if (d == "edit") { String t = server.arg("text"); t.trim(); if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); } }
   }
   uiNotesChanged();
   server.sendHeader("Location", server.arg("back").length() ? server.arg("back") : "/");
   server.send(303, "text/plain", "");
+}
+
+static void handleNew() {
+  netTouch();
+  String t = server.arg("text"); t.trim();
+  if (t.length()) notesAdd(t, "", 0);
+  uiNotesChanged();
+  server.sendHeader("Location", "/");
+  server.send(303, "text/plain", "");
+}
+
+static void handleExport() {
+  netTouch();
+  String p = "# " + cfg::str("device.name") + ", exported " + when(time(nullptr)) + "\n\n";
+  auto &all = notesAll();
+  std::vector<int> idx;
+  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && !all[i].exported && !all[i].audio.length() && all[i].text.length()) idx.push_back(i);
+  std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created < all[b].created; });
+  bool archive = cfg::flag("export.archive");
+  for (int i : idx) { Note &n = all[i]; p += "- **" + when(n.created) + "**\n  " + n.text + "\n"; n.exported = true; if (archive) { n.archived = true; n.pinned = false; } }
+  if (!idx.empty()) notesSave();
+  uiNotesChanged();
+  server.sendHeader("Content-Disposition", "attachment; filename=brainos-export.md");
+  server.send(200, "text/markdown; charset=utf-8", p);
+}
+
+static void handleUpdate() {
+  netTouch();
+  bool install = server.arg("do") == "install" && updInfo().available;
+  updateRequest(install);
+  String p = "<!doctype html><html><head><meta charset='utf-8'><meta http-equiv='refresh' content='" + String(install ? 90 : 12) + ";url=/'><style>" + String(CSS) + "</style></head><body><h1>" + String(install ? "Installing" : "Checking for an update") + "</h1><p class='s'>" + (install ? "The board downloads the release, checks it and restarts. This page comes back in a minute and a half." : "This page comes back in a few seconds.") + "</p></body></html>";
+  server.send(200, "text/html; charset=utf-8", p);
 }
 
 static void handleArchive() {
@@ -169,6 +213,9 @@ void webBegin() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/settings", HTTP_POST, handleSettings);
   server.on("/note", HTTP_POST, handleNote);
+  server.on("/new", HTTP_POST, handleNew);
+  server.on("/export", HTTP_POST, handleExport);
+  server.on("/update", HTTP_POST, handleUpdate);
   server.on("/archive", HTTP_GET, handleArchive);
   server.on("/notes.md", HTTP_GET, handleMd);
   server.on("/notes.json", HTTP_GET, handleJson);

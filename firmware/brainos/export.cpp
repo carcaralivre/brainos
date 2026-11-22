@@ -61,7 +61,7 @@ bool exportStart() {
     String h = head; h.replace("\"i\":I", "\"i\":" + String(k + 1)); h.replace("\"n\":N", "\"n\":" + String(n));
     String pad;
     for (size_t z = parts[k].length(); z < longest; z++) pad += ' ';
-    parts[k] = h + parts[k] + "]" + (pad.length() ? ",\"pad\":\"" + pad + "\"" : String()) + "}";
+    parts[k] = h + parts[k] + "],\"pad\":\"" + pad + "\"}";   // the pad field is always there: same bytes, same QR version, same size
   }
   shownAt = millis();
   Serial.printf("export: batch %s, %u notes in %d parts\n", batch.c_str(), (unsigned)ids.size(), n);

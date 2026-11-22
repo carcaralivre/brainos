@@ -120,7 +120,7 @@ static void button(int x, int y, int w, int h, const char *label, bool filled) {
 
 struct Row { int noteIndex; int y, h; String day; };  // noteIndex -1: a day header
 static std::vector<Row> rows;
-static const int ROW_H = 68, HEAD_H = 36, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = 110;
+static const int ROW_H = 68, HEAD_H = 36, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = 88;
 
 static std::vector<int> listed(bool archived) {
   auto &all = notesAll();
@@ -207,7 +207,7 @@ static int rowAt(int y) {  // the note index under y on the current page, or -1
 static void drawLock() {
   char buf[64];
   if (now.battery) snprintf(buf, sizeof(buf), "%d%%", now.percent); else strcpy(buf, "--%");
-  textCentre(W / 2, 40, F_S12, buf);
+  textCentre(W / 2, 32 + 17, F_S12, buf);   // 32 px from the top edge of the text
   time_t t = time(nullptr); struct tm tm; localtime_r(&t, &tm);
   bool known = t > 1700000000;
   if (known) strftime(buf, sizeof(buf), "%H:%M", &tm); else strcpy(buf, "--:--");
@@ -236,7 +236,7 @@ static void drawLock() {
   }
   int count = notesCount(false);
   snprintf(buf, sizeof(buf), "%d note%s", count, count == 1 ? "" : "s");
-  textCentre(W / 2, H - 70, F_S12, buf);
+  textCentre(W / 2, H - 32, F_S12, buf);   // 32 px from the bottom
 }
 
 static void drawNotes() {
@@ -278,9 +278,8 @@ static void drawSettings() {
   settingsRow(0, "Wi-Fi", netUp() ? netName() : String(cfg::wifiNetworks().size()) + " saved");
   settingsRow(1, "Export", "");
   settingsRow(2, "Archive", notesCount(true) ? String(notesCount(true)) : String(""));
-  settingsRow(3, "Sound", soundOn ? "On" : "Off");
-  settingsRow(4, "About", "");
-  textCentre(W / 2, H - 60, F_S9, "More settings at http://brain.local");
+  settingsRow(3, "About", "");
+  textCentre(W / 2, H - 32, F_S12, "More at brain.local");
 }
 
 static void drawWifi() {
@@ -291,9 +290,8 @@ static void drawWifi() {
     settingsRow(i, fitted(F_S12, nets[i].ssid, W - 48 - 130).c_str(), (int)i == forgetArmed ? "Forget?" : on ? "connected" : "");
   }
   if (nets.empty()) text(24, BAR + 56, F_S12, "No saved networks");
-  int by = BAR + 12 + nets.size() * SROW + 16;
-  button(24, by, W - 48, 52, "Add a network", false);
-  if (wifiMsg.length()) textCentre(W / 2, by + 52 + 36, F_S9, fitted(F_S9, wifiMsg, W - 48).c_str());
+  button(24, FOOT_Y, W - 48, 52, "Add a network", false);
+  if (wifiMsg.length()) textCentre(W / 2, FOOT_Y - 24, F_S9, fitted(F_S9, wifiMsg, W - 48).c_str());
 }
 
 static void drawWifiScan() {
@@ -320,24 +318,17 @@ static void drawAbout() {
   };
   int y = BAR + 40;
   for (auto &l : lines) { if (!l.length()) continue; auto w = wrapLines(F_S9, l, W - 48, 2); for (auto &t : w) { text(24, y, F_S9, t.c_str()); y += 24; } y += 6; }
-  button(24, FOOT_Y, W - 48, 52, "Check for update", false);
+  UpdInfo u = updInfo();
+  if (u.status.length() && u.checkedMs) { auto w = wrapLines(F_S9, u.status, W - 48, 3); y += 10; for (auto &t : w) { text(24, y, F_S9, t.c_str()); y += 24; } }
+  if (u.state == UPD_INSTALLING) button(24, FOOT_Y, W - 48, 52, "Installing, don't switch off", true);
+  else if (u.available) {
+    int bw = (W - 48 - 16) / 2;
+    button(24, FOOT_Y, bw, 52, "Check again", false);
+    button(24 + bw + 16, FOOT_Y, bw, 52, ("Install " + u.latest).c_str(), true);
+  } else button(24, FOOT_Y, W - 48, 52, u.state == UPD_CHECKING ? "Checking…" : "Check for update", false);
 }
 
 static void drawKeyboard() { keyboardDraw(kb, 8); }
-
-static void drawUpdate() {
-  topBar("Update", true);
-  UpdInfo u = updInfo();
-  text(24, BAR + 40, F_S9, (String("This board: ") + updVersion()).c_str());
-  auto lines = wrapLines(F_S12, u.status, W - 48, 4);
-  for (size_t i = 0; i < lines.size(); i++) text(24, BAR + 84 + i * 26, F_S12, lines[i].c_str());
-  if (u.notes.length()) { auto n = wrapLines(F_S9, u.notes, W - 48, 8); for (size_t i = 0; i < n.size(); i++) text(24, BAR + 200 + i * 22, F_S9, n[i].c_str()); }
-  if (u.state == UPD_INSTALLING) textCentre(W / 2, H - 60, F_B12, "Installing, don't switch off");
-  else {
-    button(24, H - 76, (W - 48 - 16) / 2, 52, "Check now", false);
-    if (u.available) button(24 + (W - 48 - 16) / 2 + 16, H - 76, (W - 48 - 16) / 2, 52, "Install", true);
-  }
-}
 
 static void startWifiScan() {
   canvas->fillScreen(PAPER); topBar("Networks", true); textCentre(W / 2, H / 2, F_S12, "Scanning…"); show(false);
@@ -403,7 +394,6 @@ void uiRender(bool full) {
     case SCREEN_WIFI: drawWifi(); break;
     case SCREEN_WIFI_SCAN: drawWifiScan(); break;
     case SCREEN_ABOUT: drawAbout(); break;
-    case SCREEN_UPDATE: drawUpdate(); break;
     case SCREEN_LISTENING: drawListening(); break;
     case SCREEN_SAVED: drawSaved(); break;
   }
@@ -447,7 +437,7 @@ void uiTap(int x, int y) {
       bool right = x >= 24 + bw + 16, row1 = y >= by && y < by + 52, row2 = y >= by + 64 && y < by + 116;
       if (row1 && !right) { pinNote(*n); deleteArmed = false; uiRender(false); }
       else if (row1 && right) { keyboardBegin(kb, n->text, "Edit the note", "", 1000); kbPurpose = 1; kbBack = SCREEN_NOTE; uiGo(SCREEN_KEYBOARD); }
-      else if (row2 && !right) { n->archived = !n->archived; if (n->archived) n->pinned = false; n->modified = time(nullptr); notesSave(); uiGo(n->archived ? SCREEN_NOTES : SCREEN_ARCHIVE); }
+      else if (row2 && !right) { n->archived = !n->archived; if (n->archived) n->pinned = false; else n->exported = false; n->modified = time(nullptr); notesSave(); uiGo(n->archived ? SCREEN_NOTES : SCREEN_ARCHIVE); }
       else if (row2 && right) {
         if (!deleteArmed) { deleteArmed = true; uiRender(false); }
         else { notesRemove(openId); deleteArmed = false; uiGo(SCREEN_NOTES); }
@@ -481,15 +471,13 @@ void uiTap(int x, int y) {
       if (i == 0) uiGo(SCREEN_WIFI);
       else if (i == 1) { exportStart(); uiGo(SCREEN_EXPORT); }
       else if (i == 2) uiGo(SCREEN_ARCHIVE);
-      else if (i == 3) { soundOn = !soundOn; String e; String j = soundOn ? "true" : "false"; pj::Val v; pj::parse(j.c_str(), j.length(), v); cfg::setInPlace("sound", v, e); uiRender(false); }
-      else if (i == 4) uiGo(SCREEN_ABOUT);
+      else if (i == 3) uiGo(SCREEN_ABOUT);
       break;
     }
     case SCREEN_WIFI: {
       if (leftIcon(x, y)) { uiGo(SCREEN_SETTINGS); break; }
       std::vector<WifiCred> nets = cfg::wifiNetworks();
-      int by = BAR + 12 + nets.size() * SROW + 16;
-      if (y >= by && y < by + 52) { startWifiScan(); break; }
+      if (inFooter(y)) { startWifiScan(); break; }
       int i = settingsRowAt(y);
       if (i >= 0 && i < (int)nets.size()) {
         if (forgetArmed == i) { nets.erase(nets.begin() + i); String e; cfg::setWifiInPlace(nets, e); forgetArmed = -1; wifiMsg = "Forgotten"; }
@@ -521,16 +509,11 @@ void uiTap(int x, int y) {
     }
     case SCREEN_ABOUT:
       if (leftIcon(x, y)) uiGo(SCREEN_SETTINGS);
-      else if (inFooter(y)) { extern void updateRequest(bool install); uiGo(SCREEN_UPDATE); updateRequest(false); }
-      break;
-    case SCREEN_UPDATE: {
-      if (leftIcon(x, y)) { uiGo(SCREEN_ABOUT); break; }
-      if (y >= H - 76 && y < H - 24 && updState() != UPD_INSTALLING) {
+      else if (inFooter(y) && updState() != UPD_INSTALLING) {
         extern void updateRequest(bool install);
-        updateRequest(x >= 24 + (W - 48 - 16) / 2 + 16 && updInfo().available);
+        updateRequest(updInfo().available && x >= 24 + (W - 48 - 16) / 2 + 16);
       }
       break;
-    }
     default: break;
   }
 }

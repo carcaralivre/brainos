@@ -2,7 +2,7 @@
 #pragma once
 #include <Arduino.h>
 enum Screen { SCREEN_LOCK, SCREEN_NOTES, SCREEN_NOTE, SCREEN_ARCHIVE, SCREEN_EXPORT, SCREEN_SETTINGS, SCREEN_LISTENING, SCREEN_SAVED,
-              SCREEN_KEYBOARD, SCREEN_WIFI, SCREEN_WIFI_SCAN, SCREEN_ABOUT, SCREEN_UPDATE };
+              SCREEN_KEYBOARD, SCREEN_WIFI, SCREEN_WIFI_SCAN, SCREEN_ABOUT };
 extern Screen screen;
 void uiRender(bool full);
 void uiTap(int x, int y);
