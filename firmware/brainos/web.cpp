@@ -83,7 +83,7 @@ static void sendPage(const String &msg) {
   p += "<label>Device name</label><input type='text' name='name' value='" + html(cfg::str("device.name")) + "'>";
   p += "<label>Time zone (POSIX, e.g. &lt;-03&gt;3)</label><input type='text' name='tz' value='" + html(cfg::str("device.timezone")) + "'>";
   p += "<label>Wi-Fi stays on this many minutes after the last touch (0: always)</label><input type='number' name='idle' value='" + String(cfg::num("wifi.idle_min")) + "'>";
-  p += "<label>Deep sleep after this many minutes without a touch (0: never)</label><input type='number' name='sleep' value='" + String(cfg::num("sleep.min")) + "'>";
+  p += "<label>On battery, deep sleep after this many minutes without a touch (0: never)</label><input type='number' name='sleep' value='" + String(cfg::num("sleep.min")) + "'>";
   p += "<label><input type='checkbox' name='archive' " + String(cfg::flag("export.archive") ? "checked" : "") + "> Archive notes after exporting</label><br>";
   p += "<label><input type='checkbox' name='sound' " + String(cfg::flag("sound") ? "checked" : "") + "> Beeps</label><br><br>";
   p += "<input type='submit' value='Save'></form>";

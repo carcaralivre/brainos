@@ -11,10 +11,10 @@ Built on [Sticky OS](https://github.com/Sticky-OS/sticky-os) (MIT): its screen, 
 - **Lock screen**: battery, a big clock, the date, the pinned note, how many notes there are.
 - **Notes**: grouped by day. Open one to pin it to the lock screen, edit it on the keyboard, or delete it.
 - **Record**: hold OK anywhere, speak, release. The recording waits in a queue; with Wi-Fi and an OpenRouter key it becomes text in a few seconds.
-- **Wi-Fi window**: the radio stays on for 30 minutes after the last touch (or while recordings wait), then switches off. Any touch brings it back.
+- **Always on**: Wi-Fi stays on while the board is awake. On battery it sleeps after 30 minutes without a touch, keeping the picture; OK wakes it where it was.
 - **brain.local**: a page on your network to paste the OpenRouter key, read, pin, archive and delete notes, download them as Markdown, and change settings.
 - **Export**: a loop of QR codes with the new notes; the [reader page](https://carcaralivre.github.io/brainos-reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
-- **Archive** (notes that were exported, by default), **Settings** on the board (Wi-Fi with a scan and a keyboard, date and time, sound, update, about), **updates over Wi-Fi** from this repository's releases, with rollback.
+- **Archive** (notes that were exported, by default), **Settings** on the board (Wi-Fi with a scan and a keyboard, export, archive, sound, about with update), **updates over Wi-Fi** from this repository's releases, with rollback.
 
 ## Install
 

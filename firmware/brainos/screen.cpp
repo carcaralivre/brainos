@@ -99,7 +99,7 @@ static int partials;      // ghosting since the last full refresh, in fifths of 
 static int fullRefreshes, partialRefreshes;
 static bool ghostPaused;
 void screenGhostPause(bool on) { ghostPaused = on; }
-void screenGhostReset() { ghostPaused = false; partials = 61; }
+void screenGhostReset() { ghostPaused = false; partials = 101; }
 static seeed_epaper_panel_handle_t panel;
 static const seeed_epaper_area_t FULL = {0, 0, NW, NH};
 
@@ -124,7 +124,7 @@ int refreshCount(bool full) { return full ? fullRefreshes : partialRefreshes; }
 void show(bool full) {
   if (!panel) return;
   bool idle = (int32_t)(millis() - lastActivity) > 60000;
-  if (!ghostPaused && partials + (idle ? 1 : 5) > 60) full = true;
+  if (!ghostPaused && partials + (idle ? 1 : 5) > 100) full = true;
   partials = full ? 0 : ghostPaused ? partials : partials + (idle ? 1 : 5);
   (full ? fullRefreshes : partialRefreshes)++;
   uint32_t t = millis();

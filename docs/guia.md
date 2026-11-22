@@ -2,10 +2,11 @@
 
 ## Botões e toques
 - **Segurar OK** (o botão de cima): grava. Fale, solte. A nota aparece como "Recording, N s" e vira texto quando houver Wi-Fi e a chave do OpenRouter.
-- **OK curto**: destranca (lock screen → notas) e tranca (qualquer tela → lock screen). No teclado vale como Done; na exportação, como concluir.
+- **OK curto**: tranca a tela de onde você estiver; outro clique destranca e volta exatamente para onde estava. No teclado vale como Done; na exportação, como concluir.
+- **Dormir**: na bateria, após 30 minutos sem uso, ele dorme fundo com a tela congelada como estava; um clique em OK acorda no mesmo lugar. Na tomada não dorme. O Wi-Fi fica sempre ligado enquanto acordado.
 - **Cima/Baixo**: passam as páginas da lista; com uma nota aberta, vão para a anterior e a seguinte.
-- **Cima + Baixo juntos**: volta à lock screen. Segurando os dois por 2 s: dorme (OK acorda).
-- **Toque**: cadeado = lock screen; ≡ = menu (Archive, Export, Settings); "+" = nova nota pelo teclado; uma nota = abre (Pin, Edit, Archive, Delete).
+- **Cima + Baixo juntos**: tranca. Segurando os dois por 2 s: dorme (OK acorda).
+- **Toque**: na lista, os botões New note e Settings embaixo; uma nota = abre (Pin, Edit, Archive, Delete). Settings tem Wi-Fi, Export, Archive, Sound e About; o resto fica em http://brain.local.
 - **Fixadas**: até 3; aparecem no topo da lista e na lock screen. Ao fixar uma quarta, a fixada mais antiga é liberada.
 
 ## Rede e chave
@@ -14,10 +15,10 @@
 3. O Wi-Fi fica ligado 30 minutos após o último toque e desliga sozinho; qualquer toque religa. Configurável na página.
 
 ## Exportar para o celular
-Menu → Export: o aparelho mostra os QR codes em sequência. No iPhone, abra a página leitora (https://carcaralivre.github.io/brainos-reader/), toque em Scan e aponte para a tela; a página junta as partes em qualquer ordem. Aperte OK no aparelho quando terminar: as notas vão para o Archive (configurável).
+Settings → Export: o aparelho mostra os QR codes em sequência. No iPhone, abra a página leitora (https://carcaralivre.github.io/brainos-reader/), toque em Scan e aponte para a tela; a página junta as partes em qualquer ordem. Aperte OK no aparelho quando terminar: as notas vão para o Archive (configurável).
 
 ## Atualizar
-Settings → Check for update → Install. Se a versão nova não ligar, o aparelho volta sozinho para a anterior.
+Settings → About → Check for update → Install. O aparelho só procura atualização quando você pede. Se a versão nova não ligar, o aparelho volta sozinho para a anterior.
 
 ## Restaurar o firmware da Seeed
 Pelo Playground da Seeed (https://www.seeedstudio.com/sticky/playground/official-firmware/), no Chrome, com o cabo USB.

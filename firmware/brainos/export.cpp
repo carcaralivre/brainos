@@ -34,19 +34,34 @@ bool exportStart() {
   if (idx.empty()) return false;
   std::sort(idx.begin(), idx.end(), [&](int a, int c) { return all[a].created < all[c].created; });
   String head = "{\"v\":1,\"b\":\"" + batch + "\",\"i\":I,\"n\":N,\"dev\":" + pj::esc(cfg::str("device.name")) + ",\"notes\":[";
-  String cur;
+  // Every part the same size: split the notes into n parts of about equal bytes, then pad the
+  // shorter ones, so all the codes come out with the same density.
+  std::vector<String> jsons;
+  size_t total = 0;
   for (int i : idx) {
     String j = noteJson(all[i]);
-    if (j.length() + head.length() + 4 > PART_MAX) j = j.substring(0, PART_MAX - head.length() - 8) + "…\"}";  // a very long note: cut
-    if (cur.length() && cur.length() + 1 + j.length() + head.length() + 2 > PART_MAX) { parts.push_back(cur); cur = ""; }
-    cur += (cur.length() ? "," : "") + j;
+    if (j.length() + head.length() + 4 > PART_MAX) j = j.substring(0, PART_MAX - head.length() - 8) + "…\"}";
+    total += j.length() + 1;
+    jsons.push_back(j);
     ids.push_back(all[i].id);
   }
+  size_t room = PART_MAX - head.length() - 20;
+  int n = max<int>(1, (total + room - 1) / room), k = 0;
+  size_t target = total / n + 1;
+  String cur;
+  for (auto &j : jsons) {
+    if (cur.length() && (cur.length() + 1 + j.length() > target && k < n - 1 || cur.length() + 1 + j.length() > room)) { parts.push_back(cur); cur = ""; k++; }
+    cur += (cur.length() ? "," : "") + j;
+  }
   if (cur.length()) parts.push_back(cur);
-  int n = parts.size();
+  n = parts.size();
+  size_t longest = 0;
+  for (auto &p : parts) longest = max(longest, p.length());
   for (int k = 0; k < n; k++) {
     String h = head; h.replace("\"i\":I", "\"i\":" + String(k + 1)); h.replace("\"n\":N", "\"n\":" + String(n));
-    parts[k] = h + parts[k] + "]}";
+    String pad;
+    for (size_t z = parts[k].length(); z < longest; z++) pad += ' ';
+    parts[k] = h + parts[k] + "]" + (pad.length() ? ",\"pad\":\"" + pad + "\"" : String()) + "}";
   }
   shownAt = millis();
   Serial.printf("export: batch %s, %u notes in %d parts\n", batch.c_str(), (unsigned)ids.size(), n);
@@ -76,10 +91,11 @@ void exportDraw() {
   textCentre(W / 2, qrY + qrPx + 50, F_B18, b);
   snprintf(b, sizeof(b), "%d note%s", (int)ids.size(), ids.size() == 1 ? "" : "s");
   textCentre(W / 2, qrY + qrPx + 86, F_S12, b);
-  textCentre(W / 2, H - 90, F_S12, "Point the reader page at the screen");
-  canvas->fillRoundRect(W / 2 - 100, H - 72, 200, 56, 8, INK);
+  textCentre(W / 2, H - 118, F_S9, "Point the reader page at the screen.");
+  textCentre(W / 2, H - 94, F_S9, cfg::flag("export.archive") ? "Done moves these notes to the Archive." : "Done marks these notes as exported.");
+  canvas->fillRoundRect(24, H - 76, W - 48, 52, 8, INK);
   canvas->setTextColor(PAPER);
-  textCentre(W / 2, H - 38, F_B12, "Done");
+  textCentre(W / 2, H - 76 + 32, F_B12, "Done");
   canvas->setTextColor(INK);
 }
 
