@@ -20,15 +20,15 @@ struct CfgKey {
 static const CfgKey KEYS[] = {
   // name               nvs          type       secret check      min  max    default
   {"wifi.networks",     "wifi",      CFG_WIFI,  true,  CHK_TEXT,  0,   0,     ""},
-  {"device.name",       "dev_name",  CFG_STR,   false, CHK_TEXT,  0,   40,    "BrainOS"},
+  {"device.name",       "dev_name",  CFG_STR,   false, CHK_TEXT,  0,   40,    "Brain's Brain"},
   {"device.timezone",   "dev_tz",    CFG_STR,   false, CHK_TZ,    3,   63,    "<-03>3"},
   {"stt.api_key",       "stt_key",   CFG_STR,   true,  CHK_TOKEN, 20,  256,   ""},
-  {"stt.model",         "stt_model", CFG_STR,   false, CHK_TOKEN, 1,   64,    "openai/whisper-large-v3"},
+  {"stt.model",         "stt_model", CFG_STR,   false, CHK_TOKEN, 1,   64,    "openai/gpt-4o-mini-transcribe"},
   {"stt.language",      "stt_lang",  CFG_STR,   false, CHK_TOKEN, 0,   5,     ""},
-  {"wifi.idle_min",     "wifi_idle", CFG_INT,   false, CHK_TEXT,  0,   1440,  "0"},     // minutes of Wi-Fi after the last interaction; 0: always on
+  {"wifi.idle_min",     "wifi_idle", CFG_INT,   false, CHK_TEXT,  0,   1440,  "15"},    // minutes of Wi-Fi after the last interaction; 0: always on
   {"sleep.min",         "sleep_min", CFG_INT,   false, CHK_TEXT,  0,   1440,  "30"},    // minutes on battery without a touch before deep sleep; 0: never
   {"export.archive",    "exp_arch",  CFG_BOOL,  false, CHK_TEXT,  0,   0,     "true"},
-  {"sound",             "sound",     CFG_BOOL,  false, CHK_TEXT,  0,   0,     "true"},
+  {"sound",             "sound",     CFG_BOOL,  false, CHK_TEXT,  0,   0,     "false"},
   {"update.url",        "upd_url",   CFG_STR,   false, CHK_URL,   0,   200,   ""},      // release feed; empty: GitHub
 };
 static const size_t N = sizeof(KEYS) / sizeof(KEYS[0]);

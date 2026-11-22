@@ -78,7 +78,7 @@ static void qrDraw(esp_qrcode_handle_t q) {
       if (esp_qrcode_get_module(q, x, y)) canvas->fillRect(ox + x * m, oy + y * m, m, m, INK);
 }
 
-void exportDraw() {
+void exportDraw(bool armed) {
   if (parts.empty()) { textCentre(W / 2, H / 2, F_S12, "Nothing to export"); return; }
   qrX = 24; qrY = 70; qrPx = W - 48;
   esp_qrcode_config_t c = ESP_QRCODE_CONFIG_DEFAULT();
@@ -91,7 +91,9 @@ void exportDraw() {
   textCentre(W / 2, qrY + qrPx + 50, F_B18, b);
   snprintf(b, sizeof(b), "%d note%s", (int)ids.size(), ids.size() == 1 ? "" : "s");
   textCentre(W / 2, qrY + qrPx + 86, F_S12, b);
-  uiButton(UI_MARGIN, UI_FOOT_Y, W - 2 * UI_MARGIN, UI_BTN, "Done", false);
+  textCentre(W / 2, UI_FOOT_Y - 20, F_S9, "Instructions at brain.local");
+  const char *label = !armed ? "Done" : cfg::flag("export.archive") ? "Yes, archive all" : "Yes, mark all exported";
+  uiButton(UI_MARGIN, UI_FOOT_Y, W - 2 * UI_MARGIN, UI_BTN, label, armed);
 }
 
 void exportTick() {

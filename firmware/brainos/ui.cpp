@@ -22,6 +22,7 @@ static int page;                    // the list page shown
 static String openId;               // the note on SCREEN_NOTE
 static bool deleteArmed;            // Delete tapped once
 static bool deleteAllArmed;
+static bool exportArmed;            // Done tapped once on the export screen
 static int savedSecs;
 static Keyboard kb;
 bool updateQueued();       // brainos.ino: a check or install asked for, not started yet
@@ -136,7 +137,7 @@ static String waitingOr(const Note &n) {   // a recording still to be transcribe
 
 struct Row { int noteIndex; int y, h; String day; };  // noteIndex -1: a day header
 static std::vector<Row> rows;
-static const int ROW_H = 66, HEAD_H = 32, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = 76;   // nine notes and two day headers fill the page down to the buttons
+static const int NOTES_A_PAGE = 9, HEAD_H = 32, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = UI_MARGIN + UI_BTN + 12;   // nine notes a page; the rows stretch to fill it
 
 static std::vector<int> listed(bool archived) {
   auto &all = notesAll();
@@ -147,21 +148,29 @@ static std::vector<int> listed(bool archived) {
 }
 
 
+// Pages of nine notes. Each page's rows share the height left after its day headers, so the
+// list always ends at the same line just above the buttons.
 static int listPages(bool archived) {
   rows.clear();
   auto idx = listed(archived);
   auto &all = notesAll();
-  String lastDay;
-  int y = LIST_TOP, pageH = H - LIST_TOP - LIST_BOTTOM_PAD, pages = 1;
-  for (int i : idx) {
-    String day = dayLabel(all[i].created);
-    int need = (day != lastDay ? HEAD_H : 0) + ROW_H;
-    if (y - LIST_TOP + need > pageH * pages) { pages++; y = LIST_TOP + pageH * (pages - 1); lastDay = ""; }
-    if (day != lastDay) { rows.push_back({-1, y, HEAD_H, day}); y += HEAD_H; lastDay = day; }
-    rows.push_back({i, y, ROW_H, ""});
-    y += ROW_H;
+  int pageH = H - LIST_TOP - LIST_BOTTOM_PAD, pages = 0;
+  for (size_t at = 0; at < idx.size(); pages++) {
+    size_t end = min(idx.size(), at + NOTES_A_PAGE);
+    int heads = 0;
+    String last;
+    for (size_t k = at; k < end; k++) { String d = dayLabel(all[idx[k]].created); if (d != last) { heads++; last = d; } }
+    int rowH = (pageH - heads * HEAD_H) / NOTES_A_PAGE, y = LIST_TOP + pages * pageH;
+    last = "";
+    for (size_t k = at; k < end; k++) {
+      String d = dayLabel(all[idx[k]].created);
+      if (d != last) { rows.push_back({-1, y, HEAD_H, d}); y += HEAD_H; last = d; }
+      rows.push_back({idx[k], y, rowH, ""});
+      y += rowH;
+    }
+    at = end;
   }
-  return pages;
+  return max(1, pages);
 }
 
 static void drawList(bool archived) {
@@ -171,8 +180,6 @@ static void drawList(bool archived) {
   if (page < 0) page = 0;
   int shift = page * pageH;
   bool any = false;
-  const Row *last = nullptr;   // the last row on this page gets no line under it: the end looks the same whatever the headers
-  for (auto &r : rows) if (r.y - shift >= LIST_TOP && r.y - shift + r.h <= LIST_TOP + pageH) last = &r;
   for (auto &r : rows) {
     int y = r.y - shift;
     if (y < LIST_TOP || y + r.h > LIST_TOP + pageH) continue;
@@ -185,10 +192,11 @@ static void drawList(bool archived) {
     const Note &n = all[r.noteIndex];
     String body = waitingOr(n);
     auto lines = wrapLines(F_S12, body, W - 48 - 64 - (n.pinned ? 22 : 0), 2);
-    for (size_t i = 0; i < lines.size(); i++) text(24, y + 25 + i * 24, F_S12, lines[i].c_str());
-    textRight(W - 24, y + 23, F_S9, timeOf(n.created, false).c_str());
-    if (n.pinned) iconPin(W - 44, y + 31);
-    if (&r != last) canvas->drawFastHLine(24, y + r.h - 1, W - 48, INK);
+    int first = y + r.h / 2 + 8 - (lines.size() > 1 ? 12 : 0);   // the text block centred in the row
+    for (size_t i = 0; i < lines.size(); i++) text(24, first + i * 24, F_S12, lines[i].c_str());
+    textRight(W - 24, first - 2, F_S9, timeOf(n.created, false).c_str());
+    if (n.pinned) iconPin(W - 44, first + 6);
+    canvas->drawFastHLine(24, y + r.h - 1, W - 48, INK);
   }
   if (!any) textCentre(W / 2, H / 2, F_S12, archived ? "The archive is empty" : "No notes yet");
   if (pages > 1) { String p = String(page + 1) + " / " + pages; textRight(W - 24, 38, F_S9, p.c_str()); }
@@ -254,6 +262,10 @@ static void drawNote() {
   Note *n = notesFind(openId);
   topBar("Note", true);
   if (!n) { textCentre(W / 2, H / 2, F_S12, "Gone"); return; }
+  {  // where this note sits in its list, for Up/Down
+    auto idx = listed(n->archived);
+    for (size_t k = 0; k < idx.size(); k++) if (notesAll()[idx[k]].id == openId) { String p = String(k + 1) + " / " + idx.size(); textRight(W - 24, 38, F_S9, p.c_str()); break; }
+  }
   text(24, BAR + 28, F_S9, timeOf(n->created, true).c_str());
   String body = waitingOr(*n);
   int bw = UI_HALF, by = n->archived ? FOOT_Y : FOOT_Y - UI_BTN - 12;
@@ -295,8 +307,13 @@ static void drawWifi() {
   std::vector<WifiCred> nets = cfg::wifiNetworks();
   for (size_t i = 0; i < nets.size(); i++) {
     bool on = netUp() && netName() == nets[i].ssid;
-    settingsRow(i, fitted(F_S12, nets[i].ssid, W - 48 - 130).c_str(), (int)i == forgetArmed ? "" : on ? "connected" : "");
-    if ((int)i == forgetArmed) iconX(W - 40, BAR + 12 + i * SROW + 28);
+    settingsRow(i, fitted(F_S12, nets[i].ssid, W - 48 - 170).c_str(), "");
+    int y = BAR + 12 + i * SROW;
+    if (on) textRight(W - 72, y + 44, F_S9, "connected");
+    if ((int)i == forgetArmed) { canvas->fillRoundRect(W - 24 - 36, y + 18, 36, 36, 8, INK); canvas->setTextColor(PAPER); }
+    canvas->drawRoundRect(W - 24 - 36, y + 18, 36, 36, 8, INK);
+    for (int k = 0; k < 16; k++) { canvas->fillRect(W - 50 + k, y + 28 + k, 2, 2, (int)i == forgetArmed ? PAPER : INK); canvas->fillRect(W - 50 + 15 - k, y + 28 + k, 2, 2, (int)i == forgetArmed ? PAPER : INK); }
+    canvas->setTextColor(INK);
   }
   if (nets.empty()) text(24, BAR + 56, F_S12, "No saved networks");
   button(24, FOOT_Y, W - 48, 52, "Add a network", false);
@@ -314,15 +331,19 @@ static void iconLock(int x, int y) {   // 12 x 16: a small padlock
   canvas->drawRoundRect(x + 2, y, 8, 9, 3, INK);
   canvas->fillRect(x, y + 7, 12, 9, INK);
 }
+static const size_t SCAN_A_PAGE = 8;
+static int scanRowH() { return (H - LIST_TOP - LIST_BOTTOM_PAD) / SCAN_A_PAGE; }
 static void drawWifiScan() {
   topBar("Networks", true);
   if (seen.empty()) textCentre(W / 2, H / 2, F_S12, "None found");
-  for (size_t i = 0; i < seen.size() && i < 8; i++) {
+  int rowH = scanRowH();
+  for (size_t i = 0; i < seen.size() && i < SCAN_A_PAGE; i++) {
     int bars = seen[i].rssi > -55 ? 4 : seen[i].rssi > -67 ? 3 : seen[i].rssi > -78 ? 2 : 1;
-    settingsRow(i, fitted(F_S12, seen[i].ssid, W - 48 - 70).c_str(), "");
-    int y = BAR + 12 + i * SROW + 28;
-    iconSignal(W - 24 - 22, y, bars);
-    if (seen[i].secure) iconLock(W - 24 - 22 - 24, y);
+    int y = LIST_TOP + i * rowH;
+    text(24, y + rowH / 2 + 8, F_S12, fitted(F_S12, seen[i].ssid, W - 48 - 70).c_str());
+    iconSignal(W - 24 - 22, y + rowH / 2 - 8, bars);
+    if (seen[i].secure) iconLock(W - 24 - 22 - 24, y + rowH / 2 - 8);
+    canvas->drawFastHLine(24, y + rowH - 1, W - 48, INK);
   }
   button(24, FOOT_Y, W - 48, 52, "Scan again", false);
 }
@@ -404,7 +425,7 @@ void uiRender(bool full) {
     case SCREEN_NOTES: drawNotes(); break;
     case SCREEN_NOTE: drawNote(); break;
     case SCREEN_ARCHIVE: drawArchive(); break;
-    case SCREEN_EXPORT: topBar("Export", true); exportDraw(); break;
+    case SCREEN_EXPORT: topBar("Export", true); exportDraw(exportArmed); break;
     case SCREEN_SETTINGS: drawSettings(); break;
     case SCREEN_KEYBOARD: drawKeyboard(); break;
     case SCREEN_WIFI: drawWifi(); break;
@@ -417,7 +438,7 @@ void uiRender(bool full) {
 }
 
 void uiGo(Screen s) {
-  if (s != screen) { deleteArmed = deleteAllArmed = false; forgetArmed = -1; listeningDone = false; if (s == SCREEN_NOTES || s == SCREEN_ARCHIVE) page = 0; if (s != SCREEN_WIFI) wifiMsg = ""; }
+  if (s != screen) { deleteArmed = deleteAllArmed = exportArmed = false; forgetArmed = -1; listeningDone = false; if (s == SCREEN_NOTES || s == SCREEN_ARCHIVE) page = 0; if (s != SCREEN_WIFI) wifiMsg = ""; }
   screen = s;
   touchQuick = s == SCREEN_KEYBOARD;
   screenGhostPause(s == SCREEN_EXPORT);
@@ -450,7 +471,7 @@ void uiTap(int x, int y) {
     case SCREEN_SAVED: uiGo(SCREEN_NOTES); break;
     case SCREEN_NOTES: {
       if (inFooter(y)) {
-        if (x < W / 2) { keyboardBegin(kb, "", "New note", "Type here", 1000); kbPurpose = 3; kbBack = SCREEN_NOTES; uiGo(SCREEN_KEYBOARD); }
+        if (x < W / 2) { keyboardBegin(kb, "", "New note", "", 1000); kbPurpose = 3; kbBack = SCREEN_NOTES; uiGo(SCREEN_KEYBOARD); }
         else uiGo(SCREEN_SETTINGS);
         break;
       }
@@ -493,7 +514,10 @@ void uiTap(int x, int y) {
     }
     case SCREEN_EXPORT:
       if (leftIcon(x, y)) { exportDone(true); screenGhostReset(); uiGo(SCREEN_SETTINGS); }
-      else if (inFooter(y) && exportParts()) { exportDone(false); screenGhostReset(); screen = SCREEN_NOTES; uiRender(true); }
+      else if (inFooter(y) && exportParts()) {
+        if (!exportArmed) { exportArmed = true; uiRender(false); }
+        else { exportDone(false); screenGhostReset(); uiGo(SCREEN_NOTES); uiRender(true); }
+      } else if (exportArmed) { exportArmed = false; uiRender(false); }
       break;
     case SCREEN_SETTINGS: {
       if (leftIcon(x, y)) { uiGo(SCREEN_NOTES); break; }
@@ -509,18 +533,22 @@ void uiTap(int x, int y) {
       std::vector<WifiCred> nets = cfg::wifiNetworks();
       if (inFooter(y)) { startWifiScan(); break; }
       int i = settingsRowAt(y);
-      if (i >= 0 && i < (int)nets.size()) {
+      if (i >= 0 && i < (int)nets.size() && x >= W - 24 - 44) {   // the X: once arms it, twice forgets
         if (forgetArmed == i) { nets.erase(nets.begin() + i); String e; cfg::setWifi(nets, e); forgetArmed = -1; wifiMsg = "Forgotten"; }
         else forgetArmed = i;
         uiRender(false);
+      } else if (i >= 0 && i < (int)nets.size()) {   // the name: connect to it
+        forgetArmed = -1;
+        if (netUp() && netName() == nets[i].ssid) { wifiMsg = "Already connected"; uiRender(false); }
+        else joinNetwork(nets[i].ssid, nets[i].pass);
       } else if (forgetArmed >= 0) { forgetArmed = -1; uiRender(false); }
       break;
     }
     case SCREEN_WIFI_SCAN: {
       if (leftIcon(x, y)) { uiGo(SCREEN_WIFI); break; }
       if (inFooter(y)) { startWifiScan(); break; }
-      int i = settingsRowAt(y);
-      if (i >= 0 && i < (int)seen.size() && i < 8) {
+      int i = y < LIST_TOP ? -1 : (y - LIST_TOP) / scanRowH();
+      if (i >= 0 && i < (int)seen.size() && i < (int)SCAN_A_PAGE) {
         joinSsid = seen[i].ssid;
         if (!seen[i].secure) joinNetwork(joinSsid, "");
         else { keyboardBegin(kb, "", ("Password for " + joinSsid).c_str(), "", 64); keyboardSecret(kb); kbPurpose = 2; kbBack = SCREEN_WIFI_SCAN; uiGo(SCREEN_KEYBOARD); }
@@ -546,7 +574,6 @@ void uiSwipe(int x, int y, int dx, int dy) {
 void uiOk() {
   switch (screen) {
     case SCREEN_LOCK: uiGo(lockFrom); break;
-    case SCREEN_EXPORT: exportDone(false); screenGhostReset(); screen = SCREEN_NOTES; uiRender(true); break;
     case SCREEN_KEYBOARD: keyboardResult(KB_DONE); break;   // OK is Done
     case SCREEN_LISTENING: break;
     default: uiLock(); break;   // one click locks
