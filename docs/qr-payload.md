@@ -43,8 +43,9 @@ parts in order, about 1 second each, and starts again from part 1 until Done is 
 5. Join the `notes` arrays in part order. Notes already seen in an earlier batch (same `id`)
    may be skipped.
 
-Done on the board marks the notes as exported and, with "Archive after exporting"
-on (the default), moves them to the Archive. Leaving with the back arrow changes nothing.
+"Archive all" on the board (tapped twice) moves the notes to the Archive when "Archive after
+exporting" is on (the default); with it off, the button is just "Done". Leaving with the back
+arrow changes nothing.
 
 A guide for adding BrainOS import to another app lives in the reader repository:
 `INTEGRATION.md` in github.com/carcaralivre/brainos-reader.

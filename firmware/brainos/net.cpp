@@ -14,9 +14,7 @@ extern const char *const VERSION;
 extern const uint8_t caBundleStart[] asm("_binary_x509_crt_bundle_start");
 extern const uint8_t caBundleEnd[] asm("_binary_x509_crt_bundle_end");
 
-static uint32_t lastTouch;       // millis() of the last interaction
-static bool busy;                // a request in flight
-static bool radioOn;             // what we asked for
+static bool radioOn_;            // the radio was started
 static int tryIndex = -1;        // the saved network being tried, -1: none
 static uint32_t tryAt, backoffUntil;
 static bool wasUp, clockStarted, rtcSynced, mdnsOn;
@@ -25,18 +23,9 @@ static volatile uint8_t lastReason;
 
 bool netUp() { return WiFi.status() == WL_CONNECTED; }
 bool timeKnown() { return time(nullptr) > 1700000000; }
-void netTouch() { lastTouch = millis(); }
-void netSetBusy(bool b) { busy = b; }
 String netName() { return netUp() ? WiFi.SSID() : String(); }
 String netAddress() { return netUp() ? WiFi.localIP().toString() : String(); }
 int netSignal() { return netUp() ? WiFi.RSSI() : 0; }
-
-bool netWanted() {
-  long idleMin = cfg::num("wifi.idle_min");
-  if (idleMin <= 0) return true;                         // 0: always on
-  if (notesPending() && cfg::isSet("stt.api_key")) return true;
-  return millis() - lastTouch < (uint32_t)idleMin * 60000UL;
-}
 
 static void onWifiEvent(WiFiEvent_t e, WiFiEventInfo_t info) {
   if (e == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) lastReason = info.wifi_sta_disconnected.reason;
@@ -46,7 +35,6 @@ void netBegin() {
   WiFi.persistent(false);  // the networks live in the settings, not in the driver's flash
   WiFi.onEvent(onWifiEvent);
   WiFi.setHostname("brain");
-  lastTouch = millis();
 }
 
 // The time servers as addresses, so SNTP never does DNS from lwIP's core (upstream's finding).
@@ -109,23 +97,14 @@ static void joined() {
   }
 }
 
-static void radio(bool on) {
-  if (on == radioOn) return;
-  radioOn = on;
-  if (on) { WiFi.mode(WIFI_STA); tryIndex = -1; backoffUntil = 0; }
-  else {
-    Serial.println("wifi: off");
-    if (mdnsOn) { MDNS.end(); mdnsOn = false; }
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    tryIndex = -1;
-  }
+static void radioOn() {
+  if (radioOn_) return;
+  radioOn_ = true;
+  WiFi.mode(WIFI_STA); tryIndex = -1; backoffUntil = 0;
 }
 
 void netTick() {
-  bool want = netWanted();
-  if (!want && !busy) { radio(false); wasUp = false; return; }
-  if (want) radio(true);
+  radioOn();   // awake is on
   bool up = netUp();
   if (up && !wasUp) joined();
   if (!up && wasUp) Serial.printf("wifi: dropped (reason %d)\n", lastReason);
@@ -160,7 +139,7 @@ void netTick() {
 
 bool netScan(std::vector<NetSeen> &out, String &why) {
   out.clear();
-  radio(true);
+  radioOn();
   int n = -2;
   for (int attempt = 0; attempt < 3 && n < 0; attempt++) {
     if (attempt) delay(700);
@@ -193,7 +172,7 @@ static String reasonText(uint8_t r) {
 }
 
 bool netJoin(const String &ssid, const String &pass, String &why, bool (*cancel)(), uint32_t timeoutMs) {
-  radio(true);
+  radioOn();
   WiFi.disconnect();
   delay(100);
   lastReason = 0;

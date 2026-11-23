@@ -8,13 +8,17 @@ Built on [Sticky OS](https://github.com/Sticky-OS/sticky-os) (MIT): its screen, 
 
 ## What it does
 
-- **Lock screen**: battery, a big clock, the date, the pinned notes (up to three), how many notes there are.
-- **Notes**: grouped by day. Open one to pin it to the lock screen, edit it on the keyboard, or delete it.
-- **Record**: hold OK anywhere, speak, release. The recording waits in a queue; with Wi-Fi and an OpenRouter key it becomes text in a few seconds.
-- **Always on**: Wi-Fi stays on while the board is awake. On battery it sleeps after 30 minutes without a touch, keeping the picture; OK wakes it where it was.
-- **brain.local**: a page on your network to paste the OpenRouter key, read, pin, archive and delete notes, download them as Markdown, and change settings.
-- **Export**: a loop of QR codes with the new notes; the [reader page](https://carcaralivre.github.io/brainos-reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
-- **Archive** (notes that were exported, by default), **Settings** on the board (Wi-Fi with a scan and a keyboard, export, archive, about with update), **updates over Wi-Fi** from this repository's releases, with rollback.
+- **Two states**: awake, Wi-Fi is on, recordings and questions go out, and `brain.local` answers. Asleep, everything is off and the lock screen shows a padlock; only OK wakes it. On battery it sleeps 3 minutes after the last touch or button (a setting on `brain.local`); plugged in, never. At midnight it wakes for a moment to change the date.
+- **Lock screen**: battery, the date, up to three pinned notes, how many notes there are. A tap opens the list, a tap on a pinned note opens it, OK goes back to where you were.
+- **Hold a button** (anywhere):
+  - **OK**: a new note. Speak, release; the note opens and its text arrives when there is Wi-Fi and an OpenRouter key.
+  - **Up**: a new chat note: the question, then the assistant's answer (model and instructions on `brain.local`).
+  - **Down**: in a note, a recording added at its end (in a chat note, the next question, with the conversation so far); anywhere else, a passing **Chat** about your notes, saved only if you tap *Save as note*.
+- **Notes**: grouped by day. Open one to pin it, edit it, *Tidy* it (the assistant fixes punctuation and drops filler words; the original is kept), archive or delete it. A long note scrolls by pages with Up/Down; a swipe sideways goes to the next note.
+- **Costs**: each note shows what it cost (transcriptions and answers); the board's About and `brain.local` show the totals by day, week and month.
+- **brain.local**: a page on your network to paste the OpenRouter key, read, pin, tidy, archive and delete notes (with *Undo*), download them as Markdown, add Wi-Fi networks, and change settings.
+- **Export**: a loop of QR codes with the notes on the list; the [reader page](https://carcaralivre.github.io/brainos-reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
+- **Archive**, **Settings** on the board (Wi-Fi with a scan and a keyboard, export, archive, about), **updates over Wi-Fi** from this repository's releases, with rollback.
 
 ## Install
 
@@ -35,7 +39,7 @@ firmware/build.sh build   # into ~/.cache/brainos-build
 firmware/build.sh         # build and flash over USB
 ```
 
-Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/tools/drive.py <port> shot:file.png` saves it as PNG and runs any other commands in order), `stats`, `notes`, `note add <text>`, `wifi`, `wifi add <ssid> <password>`, `time YYYY-MM-DD HH:MM`, `tap x y`, `ok`, `move n`, `lock`, `sleep`, `nettest`.
+Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/tools/drive.py <port> shot:file.png` saves it as PNG and runs any other commands in order), `notes`, `note add <text>`, `wifi`, `wifi add <ssid> <password>`, `time YYYY-MM-DD HH:MM`, `tap x y`, `ok`, `move n`, `lock`, `sleep`.
 
 `spike/sticky-stt/` is the on-chip speech-to-text experiment that decided against local transcription ([docs/stt-spike.md](docs/stt-spike.md)). It is not part of the firmware.
 
@@ -43,7 +47,7 @@ Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/too
 
 | Where | What |
 |---|---|
-| `firmware/brainos/` | the sketch: `board`, `screen`, `touch`, `rtc` (hardware); `notes`, `capture`, `stt`, `net`, `web`, `export`, `ota` (features); `ui`, `keyboard` (screens) |
+| `firmware/brainos/` | the sketch: `board`, `screen`, `touch`, `rtc` (hardware); `notes`, `capture`, `stt`, `chat`, `cost`, `net`, `web`, `export`, `ota` (features); `ui`, `keyboard` (screens) |
 | `firmware/build.sh`, `firmware/tools/` | build, flash, screenshots, serial driving |
 | `site/` | the Install page (esp-web-tools), deployed to GitHub Pages by the Install-page workflow after each release |
 | `docs/` | the QR payload spec, the guide, the spike's record, screenshots |

@@ -5,12 +5,14 @@
 #include <WebServer.h>
 #include <LittleFS.h>
 #include "board.h"
+#include "cost.h"
 #include "config.h"
 #include "net.h"
 #include "notes.h"
 #include "ota.h"
 #include "provjson.h"
 #include "stt.h"
+#include <vector>
 
 static WebServer server(80);
 static bool started;
@@ -19,6 +21,19 @@ extern void updateRequest(bool install);
 extern const char *const VERSION;
 
 static const char *READER = "https://carcaralivre.github.io/brainos-reader/";
+
+// Undo: the notes as they were before the last delete, archive or export, for 6 s (a few more
+// here, for a slow phone). A deleted recording's audio file stays until then.
+static std::vector<Note> undoNotes;
+static String undoWhat;        // "Deleted", "Archived", "Exported and archived"
+static uint32_t undoAt;
+static const uint32_t UNDO_SHOW = 6000, UNDO_KEEP = 10000;
+static void undoForget() {
+  for (auto &n : undoNotes) if (n.audio.length() && !notesFind(n.id)) LittleFS.remove(n.audio);
+  undoNotes.clear(); undoWhat = "";
+}
+static void undoStart(const char *what) { undoForget(); undoWhat = what; undoAt = millis(); }
+static bool undoLive() { return undoWhat.length() && millis() - undoAt < UNDO_KEEP; }
 
 static String html(const String &s) {
   String o; o.reserve(s.length() + 16);
@@ -56,11 +71,18 @@ static const char CSS[] PROGMEM =
   "textarea{min-height:80px;line-height:20px}.check{display:flex;align-items:center;gap:10px;font:14px/20px Geist,-apple-system,sans-serif;text-transform:none;letter-spacing:0;color:var(--fg);margin:12px 0 0}.check input{width:18px;height:18px;margin:0;accent-color:var(--primary)}"
   ".pend{color:var(--muted)}.mute{color:var(--muted);margin:0 0 10px}a{color:var(--fg)}details{margin-top:8px}summary{cursor:pointer;color:var(--muted);list-style:none}summary::-webkit-details-marker{display:none}summary:before{content:'+ '}details[open] summary:before{content:'\\2212 '}"
   ".msg{border:1px dashed var(--border);border-radius:10px;padding:10px 12px;margin:0 0 12px;color:var(--muted)}"
-  ".net{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--border)}.net.first{border-top:0;padding-top:0}.net b{font-weight:500}";
+  ".net{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--border)}.net.first{border-top:0;padding-top:0}.net b{font-weight:500}"
+  ".toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--primary);color:#fff;border-radius:12px;padding:6px 6px 6px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 16px rgba(0,0,0,.15)}"
+  ".toast button{color:#fff;border-color:rgba(255,255,255,.3)}.toast button:hover{background:#1a1917}"
+  "table{width:100%;border-collapse:collapse;font:12px/18px 'Geist Mono',ui-monospace,Menlo,monospace;margin:0 0 12px}td{padding:4px 0;border-top:1px solid var(--border)}td:last-child{text-align:right}"
+  "h3{font:500 12px/16px Geist,-apple-system,sans-serif;color:var(--muted);margin:12px 0 4px}";
 
-// Destructive controls arm on the first click and run on a second within 3 s: no dialogs.
+// Destructive controls arm on the first click ("Yes, …") and run on a second; a click anywhere
+// else, or 3 s, disarms them. No dialogs.
 static const char JS[] PROGMEM =
-  "document.addEventListener('click',function(e){var b=e.target.closest('button[data-arm]');if(!b)return;if(b.dataset.armed)return;e.preventDefault();"
+  "document.addEventListener('click',function(e){var b=e.target.closest('button[data-arm]');"
+  "document.querySelectorAll('button[data-armed]').forEach(function(o){if(o!==b){delete o.dataset.armed;o.textContent=o.dataset.label;o.classList.remove('destructive')}});"
+  "if(!b)return;if(b.dataset.armed)return;e.preventDefault();"
   "b.dataset.armed='1';b.dataset.label=b.textContent;b.textContent=b.dataset.arm;b.classList.add('destructive');"
   "setTimeout(function(){delete b.dataset.armed;b.textContent=b.dataset.label;b.classList.remove('destructive')},3000)});";
 
@@ -83,18 +105,35 @@ static String option(const String &value, const String &label, const String &cur
 
 static void noteCard(String &p, const Note &n, bool first, const char *back) {
   p += "<div class='note" + String(first ? " first" : "") + "'>";
-  if (n.audio.length()) p += "<p class='pend'>Recording of " + String(n.secs) + " s, waiting for transcription</p>";
-  else p += "<p>" + html(n.text) + "</p>";
-  p += "<div class='meta'>" + when(n.created) + (n.pinned ? " · pinned" : "") + (n.asked ? " · asked" : "") + (n.asking ? " · waiting for the answer" : "") + "</div>";
+  if (n.text.length()) p += "<p>" + html(n.text) + "</p>";
+  if (n.audio.length()) p += "<p class='pend'>" + String(n.asked ? "Question" : "Recording") + " of " + String(n.secs) + " s, waiting for transcription</p>";
+  else if (n.asking) p += "<p class='pend'>(asking…)</p>";
+  else if (n.tidying) p += "<p class='pend'>(tidying…)</p>";
+  p += "<div class='meta'>" + when(n.created) + " · " + costText(n.cost) + (n.pinned ? " · pinned" : "") + (n.asked ? " · chat" : "") + (n.orig.length() ? " · tidied" : "") + "</div>";
   p += "<div class='row'><form method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='back' value='" + back + "'>";
   if (n.archived) p += "<button name='do' value='restore'>Restore</button>";
   else {
     p += "<button name='do' value='pin'>" + String(n.pinned ? "Unpin" : "Pin") + "</button>";
-    if (!n.audio.length()) p += "<button name='do' value='archive'>Archive</button>";
+    if (!n.busy()) p += "<button name='do' value='archive'>Archive</button>";
+    if (!n.busy() && n.text.length()) p += "<button name='do' value='tidy'>Tidy</button>";
   }
-  p += "<button class='d' name='do' value='delete' data-arm='Click again to delete'>Delete</button></form></div>";
-  if (!n.archived && !n.audio.length()) p += "<details><summary>Edit</summary><form class='b' method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text'>" + html(n.text) + "</textarea><p></p><input class='o' type='submit' value='Save'></form></details>";
+  p += "<button class='d' name='do' value='delete' data-arm='Yes, delete'>Delete</button></form></div>";
+  if (!n.archived && !n.busy()) p += "<details><summary>Edit</summary><form class='b' method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text'>" + html(n.text) + "</textarea><p></p><input class='o' type='submit' value='Save'></form></details>";
   p += "</div>";
+}
+
+// The last action's Undo, at the bottom of the page for what is left of its 6 s.
+static String undoToast(const char *back) {
+  if (!undoWhat.length() || millis() - undoAt >= UNDO_SHOW) return "";
+  uint32_t left = UNDO_SHOW - (millis() - undoAt);
+  return "<div class='toast' id='undo'><span>" + html(undoWhat) + "</span><form method='post' action='/undo'><input type='hidden' name='back' value='" + back + "'><button class='o'>Undo</button></form></div>"
+         "<script>setTimeout(function(){var u=document.getElementById('undo');if(u)u.remove()}," + String(left) + ")</script>";
+}
+
+static void costRows(String &p, const char *title, int count, uint64_t (*sum)(int), String (*label)(int)) {
+  p += "<h3>" + String(title) + "</h3><table>";
+  for (int i = 0; i < count; i++) p += "<tr><td>" + label(i) + "</td><td>" + costText(sum(i)) + "</td></tr>";
+  p += "</table>";
 }
 
 static void sendPage(const String &msg) {
@@ -125,16 +164,16 @@ static void sendPage(const String &msg) {
 
   p += "<div class='card'><h2>Export</h2><p class='mute'>On the board, Settings → Export shows the notes as QR codes. Open the QR reader (button at the top), tap Scan and point the camera at the board; when the reader has every part, tap Archive all on the board.</p>";
   int fresh = 0;
-  for (int i : idx) if (!all[i].audio.length() && all[i].text.length()) fresh++;
-  p += "<p class='mute'>Or export here: " + String(fresh) + " note" + (fresh == 1 ? "" : "s") + " as a Markdown file, which " + (cfg::flag("export.archive") ? "moves them to the Archive" : "marks them exported") + ".</p><div class='row'>";
-  if (fresh) p += "<form method='post' action='/export'><input class='o' type='submit' value='Export these notes (.md)'></form>";
+  for (int i : idx) if (all[i].text.length()) fresh++;
+  p += "<p class='mute'>Or export here: " + String(fresh) + " note" + (fresh == 1 ? "" : "s") + " as a Markdown file" + (cfg::flag("export.archive") ? ", which moves them to the Archive" : "") + ".</p><div class='row'>";
+  if (fresh) p += "<form method='post' action='/export' onsubmit='setTimeout(function(){location.href=\"/\"},1500)'><input class='o' type='submit' value='Export these notes (.md)'></form>";
   p += "<a class='btn o' href='/notes.md'>All notes (.md)</a><a class='btn o' href='/notes.json'>JSON</a>" + (arch ? "<a class='btn o' href='/archive'>Archive · " + String(arch) + "</a>" : String()) + "</div></div>";
 
   std::vector<WifiCred> nets = cfg::wifiNetworks();
   p += "<div class='card'><h2>Wi-Fi</h2>";
   p += "<p class='mute'>" + String(netUp() ? "Connected to " + html(netName()) + ", " + netAddress() + ", " + String(netSignal()) + " dBm." : "Not connected.") + "</p>";
   for (size_t i = 0; i < nets.size(); i++) {
-    p += "<div class='net" + String(i == 0 ? " first" : "") + "'><b>" + html(nets[i].ssid) + "</b><form method='post' action='/wifi'><input type='hidden' name='do' value='forget'><input type='hidden' name='ssid' value='" + html(nets[i].ssid) + "'><button class='d' data-arm='Click again to forget'>Forget</button></form></div>";
+    p += "<div class='net" + String(i == 0 ? " first" : "") + "'><b>" + html(nets[i].ssid) + "</b><form method='post' action='/wifi'><input type='hidden' name='do' value='forget'><input type='hidden' name='ssid' value='" + html(nets[i].ssid) + "'><button class='d' data-arm='Yes, forget'>Forget</button></form></div>";
   }
   if (nets.empty()) p += "<p class='mute'>No saved networks.</p>";
   p += "<details><summary>Add a network</summary><form class='b' method='post' action='/wifi'><input type='hidden' name='do' value='add'><label>Network name</label><input type='text' name='ssid' autocapitalize='off' autocorrect='off'><label>Password (empty for an open network)</label><input type='password' name='pass' autocomplete='off'><p></p><input class='o' type='submit' value='Save network'></form></details></div>";
@@ -148,7 +187,6 @@ static void sendPage(const String &msg) {
   if (!known) p += option(model, model, model);
   p += "</select>";
   p += "<label>Transcription style: how to write, and names or words it should know (a hint, best with an example)</label><textarea name='prompt' placeholder='Tudo em minúsculas, sem ponto final. Nomes: BrainOS, Olívia. Exemplo: comprar café e leite'>" + html(cfg::str("stt.prompt")) + "</textarea>";
-  p += "<label>Language hint (pt, en; empty detects)</label><input type='text' name='lang' value='" + html(cfg::str("stt.language")) + "' autocapitalize='off'>";
   String ask = cfg::str("ask.model");
   p += "<label>Assistant model (hold Up to record a question; the answer goes into the note)</label><select name='askmodel'>";
   known = false;
@@ -163,21 +201,24 @@ static void sendPage(const String &msg) {
   for (const Zone &z : ZONES) { p += option(z.tz, z.label, tz); known |= tz == z.tz; }
   if (!known) p += option(tz, "Custom: " + tz, tz);
   p += "</select>";
-  p += "<label>Wi-Fi stays on this many minutes after the last touch (0: always on)</label><input type='number' name='idle' min='0' max='1440' value='" + String(cfg::num("wifi.idle_min")) + "'>";
-  p += "<label>On battery, deep sleep after this many minutes without a touch (0: never)</label><input type='number' name='sleep' min='0' max='1440' value='" + String(cfg::num("sleep.min")) + "'>";
+  p += "<label>On battery, sleep after this many minutes without a touch or a button (Wi-Fi and this page go off; OK wakes it)</label><input type='number' name='sleep' min='1' max='1440' value='" + String(cfg::num("sleep.min")) + "'>";
   p += "<label class='check'><input type='checkbox' name='archive' " + String(cfg::flag("export.archive") ? "checked" : "") + "> Archive notes after exporting</label>";
-  p += "<label class='check'><input type='checkbox' name='sound' " + String(cfg::flag("sound") ? "checked" : "") + "> Beeps on the board</label>";
-  p += "<p></p><input class='o' type='submit' value='Save settings'></form></div>";
+  p += "<p></p><input class='o' type='submit' value='Save settings'></form>";
+  p += "<h2 style='margin-top:20px'>Costs</h2><p class='mute'>What OpenRouter charged: transcriptions (by length) and answers. Deleting a note keeps its cost here.</p>";
+  costRows(p, "Last 7 days", 7, costDaysAgo, costDayLabel);
+  costRows(p, "Last 4 weeks (from Monday)", 4, costWeeksAgo, costWeekLabel);
+  costRows(p, "Last 12 months", 12, costMonthsAgo, costMonthLabel);
+  p += "<p class='mute'>Since the board was set up: " + costText(costTotal()) + "</p></div>";
 
   UpdInfo u = updInfo();
   p += "<div class='card'><h2>About</h2><p class='mute'>BrainOS " + String(VERSION) + " on " + html(name) + ". " + (u.checkedMs ? html(u.status) : String("Updates are checked only when you ask.")) + "</p><div class='row'><form method='post' action='/update'><button class='o' name='do' value='check'>Check for update</button>";
-  if (u.available) p += "<button class='o' name='do' value='install' data-arm='Click again to install'>Install " + html(u.latest) + "</button>";
+  if (u.available) p += "<button class='o' name='do' value='install' data-arm='Yes, install'>Install " + html(u.latest) + "</button>";
   p += "</form></div></div>";
-  p += "</div><script>" + String(FPSTR(JS)) + "</script></body></html>";
+  p += "</div>" + undoToast("/") + "<script>" + String(FPSTR(JS)) + "</script></body></html>";
   server.send(200, "text/html; charset=utf-8", p);
 }
 
-static void handleRoot() { netTouch(); sendPage(""); }
+static void handleRoot() { sendPage(""); }
 
 static void back(const char *where) {
   server.sendHeader("Location", where);
@@ -186,28 +227,21 @@ static void back(const char *where) {
 
 // Only the fields that came with the form change; checkboxes come as a set (boxes=1).
 static void handleSettings() {
-  netTouch();
   String err;
   if (server.arg("key").length()) cfg::setStr("stt.api_key", server.arg("key"), err);
   if (!err.length() && server.hasArg("model")) cfg::setStr("stt.model", server.arg("model"), err);
-  if (!err.length() && server.hasArg("lang")) cfg::setStr("stt.language", server.arg("lang"), err);
   if (!err.length() && server.hasArg("prompt")) { String t = server.arg("prompt"); t.replace("\r", ""); t.replace("\n", " "); t.trim(); cfg::setStr("stt.prompt", t, err); }
   if (!err.length() && server.hasArg("askmodel")) cfg::setStr("ask.model", server.arg("askmodel"), err);
   if (!err.length() && server.hasArg("askprompt")) { String t = server.arg("askprompt"); t.replace("\r", ""); t.replace("\n", " "); t.trim(); cfg::setStr("ask.prompt", t, err); }
   if (!err.length() && server.hasArg("name")) cfg::setStr("device.name", server.arg("name"), err);
   if (!err.length() && server.hasArg("tz") && cfg::setStr("device.timezone", server.arg("tz"), err)) { setenv("TZ", server.arg("tz").c_str(), 1); tzset(); }
-  if (!err.length() && server.arg("idle").length()) cfg::setNum("wifi.idle_min", server.arg("idle").toInt(), err);
   if (!err.length() && server.arg("sleep").length()) cfg::setNum("sleep.min", server.arg("sleep").toInt(), err);
-  if (!err.length() && server.hasArg("boxes")) {
-    cfg::setFlag("export.archive", server.hasArg("archive"), err);
-    if (!err.length()) { cfg::setFlag("sound", server.hasArg("sound"), err); soundOn = cfg::flag("sound"); }
-  }
+  if (!err.length() && server.hasArg("boxes")) cfg::setFlag("export.archive", server.hasArg("archive"), err);
   uiNotesChanged();
   sendPage(err.length() ? "Not saved: " + err : "Saved");
 }
 
 static void handleWifi() {
-  netTouch();
   std::vector<WifiCred> nets = cfg::wifiNetworks();
   String d = server.arg("do"), ssid = server.arg("ssid"), err, msg;
   if (d == "forget") {
@@ -223,22 +257,21 @@ static void handleWifi() {
 }
 
 static void handleNote() {
-  netTouch();
   Note *n = notesFind(server.arg("id"));
   String d = server.arg("do");
   if (n) {
-    if (d == "delete") notesRemove(n->id);
+    if (d == "delete") { undoStart("Deleted"); undoNotes.push_back(*n); notesRemove(n->id, true); }
     else if (d == "pin" && !n->archived) notesPin(*n);
-    else if (d == "archive" && !n->audio.length()) { n->archived = true; n->pinned = false; notesSave(); }
-    else if (d == "restore") { n->archived = false; n->exported = false; notesSave(); }
-    else if (d == "edit" && !n->archived) { String t = server.arg("text"); t.trim(); if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); } }
+    else if (d == "archive" && !n->busy()) { undoStart("Archived"); undoNotes.push_back(*n); n->archived = true; n->pinned = false; notesSave(); }
+    else if (d == "restore") { n->archived = false; notesSave(); }
+    else if (d == "tidy" && !n->archived && !n->busy() && n->text.length()) { n->tidying = true; notesSave(); }
+    else if (d == "edit" && !n->archived && !n->busy()) { String t = server.arg("text"); t.trim(); if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); } }
   }
   uiNotesChanged();
   back(server.arg("back") == "/archive" ? "/archive" : "/");   // only our own two pages
 }
 
 static void handleNew() {
-  netTouch();
   String t = server.arg("text"); t.trim();
   if (t.length()) notesAdd(t, "", 0);
   uiNotesChanged();
@@ -247,23 +280,34 @@ static void handleNew() {
 
 static String indented(String t) { t.replace("\n", "\n  "); return t; }   // a note's own line breaks stay inside its list item
 
+// A note in the Markdown: a list item with the date, its marks, the text, and the text before Tidy.
+static String item(const Note &n, bool showArchived) {
+  String s = "- **" + when(n.created) + "**" + (showArchived && n.archived ? " (archived)" : "") + (n.pinned ? " (pinned)" : "") + (n.asked ? " (asked)" : "") + "\n  ";
+  s += n.text.length() ? indented(n.text) : String("(recording waiting for transcription)");
+  if (n.orig.length()) s += "\n\n  (original: " + indented(n.orig) + ")";
+  return s + "\n";
+}
+
 static void handleExport() {
-  netTouch();
   String p = "# " + cfg::str("device.name") + ", exported " + when(time(nullptr)) + "\n\n";
   auto &all = notesAll();
   std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && !all[i].audio.length() && all[i].text.length()) idx.push_back(i);
+  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && all[i].text.length()) idx.push_back(i);
   std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created < all[b].created; });
   bool archive = cfg::flag("export.archive");
-  for (int i : idx) { Note &n = all[i]; p += "- **" + when(n.created) + "**" + (n.pinned ? " (pinned)" : "") + (n.asked ? " (asked)" : "") + "\n  " + indented(n.text) + "\n"; n.exported = true; if (archive) { n.archived = true; n.pinned = false; } }
-  if (!idx.empty()) notesSave();
+  if (archive && !idx.empty()) undoStart("Exported and archived");
+  for (int i : idx) {
+    Note &n = all[i];
+    p += item(n, false);
+    if (archive) { undoNotes.push_back(n); n.archived = true; n.pinned = false; }
+  }
+  if (archive && !idx.empty()) notesSave();
   uiNotesChanged();
   server.sendHeader("Content-Disposition", "attachment; filename=brainos-export.md");
   server.send(200, "text/markdown; charset=utf-8", p);
 }
 
 static void handleUpdate() {
-  netTouch();
   bool install = server.arg("do") == "install" && updInfo().available;
   updateRequest(install);
   String p = head(install ? "Installing" : "Checking", "<meta http-equiv='refresh' content='" + String(install ? 90 : 12) + ";url=/'>");
@@ -272,39 +316,49 @@ static void handleUpdate() {
 }
 
 static void handleArchive() {
-  netTouch();
   String p = head("Archive");
   p += "<header><h1>Archive</h1><a class='btn o' href='/'>Notes</a></header><div class='card'>";
   bool first = true, any = false;
   for (auto &n : notesAll()) if (n.archived) { noteCard(p, n, first, "/archive"); first = false; any = true; }
   if (!any) p += "<p class='mute'>The archive is empty.</p>";
-  p += "</div></div><script>" + String(FPSTR(JS)) + "</script></body></html>";
+  p += "</div></div>" + undoToast("/archive") + "<script>" + String(FPSTR(JS)) + "</script></body></html>";
   server.send(200, "text/html; charset=utf-8", p);
 }
 
 static void handleMd() {
-  netTouch();
   String p = "# " + cfg::str("device.name") + "\n\n";
   auto &all = notesAll();
   std::vector<int> idx;
   for (size_t i = 0; i < all.size(); i++) idx.push_back(i);
   std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created > all[b].created; });
-  for (int i : idx) { const Note &n = all[i]; p += "- **" + when(n.created) + "**" + (n.archived ? " (archived)" : "") + (n.pinned ? " (pinned)" : "") + (n.asked ? " (asked)" : "") + "\n  " + (n.audio.length() ? String("(recording waiting for transcription)") : indented(n.text)) + "\n"; }
+  for (int i : idx) p += item(all[i], true);
   server.sendHeader("Content-Disposition", "attachment; filename=notes.md");
   server.send(200, "text/markdown; charset=utf-8", p);
 }
 
 static void handleJson() {
-  netTouch();
   String p = "[";
   bool first = true;
   for (auto &n : notesAll()) {
     if (!first) p += ",";
     first = false;
-    p += "{\"id\":\"" + n.id + "\",\"text\":" + pj::esc(n.text) + ",\"created\":" + n.created + ",\"pinned\":" + (n.pinned ? "true" : "false") + ",\"archived\":" + (n.archived ? "true" : "false") + ",\"asked\":" + (n.asked ? "true" : "false") + ",\"pending\":" + (n.audio.length() ? "true" : "false") + "}";
+    p += "{\"id\":\"" + n.id + "\",\"text\":" + pj::esc(n.text) + ",\"created\":" + n.created + ",\"pinned\":" + (n.pinned ? "true" : "false") + ",\"archived\":" + (n.archived ? "true" : "false") + ",\"asked\":" + (n.asked ? "true" : "false") + ",\"pending\":" + (n.busy() ? "true" : "false") + ",\"cost_usd\":" + String(n.cost / 1e6, 6) + (n.orig.length() ? ",\"original\":" + pj::esc(n.orig) : String()) + "}";
   }
   p += "]";
   server.send(200, "application/json", p);
+}
+
+static void handleUndo() {
+  if (undoLive()) {
+    for (auto &was : undoNotes) {
+      Note *n = notesFind(was.id);
+      if (n) *n = was; else notesAll().push_back(was);
+    }
+    notesSave();
+    undoNotes.clear(); undoWhat = "";
+    uiNotesChanged();
+  }
+  back(server.arg("back") == "/archive" ? "/archive" : "/");
 }
 
 void webBegin() {
@@ -315,6 +369,7 @@ void webBegin() {
   server.on("/new", HTTP_POST, handleNew);
   server.on("/export", HTTP_POST, handleExport);
   server.on("/update", HTTP_POST, handleUpdate);
+  server.on("/undo", HTTP_POST, handleUndo);
   server.on("/archive", HTTP_GET, handleArchive);
   server.on("/notes.md", HTTP_GET, handleMd);
   server.on("/notes.json", HTTP_GET, handleJson);
@@ -322,6 +377,7 @@ void webBegin() {
 }
 
 void webTick() {
+  if (undoWhat.length() && millis() - undoAt >= UNDO_KEEP) undoForget();   // too late to undo: a deleted recording's file goes now
   if (!netUp()) { if (started) { server.stop(); started = false; } return; }
   if (!started) { server.begin(); started = true; Serial.println("web: http://brain.local"); }
   server.handleClient();

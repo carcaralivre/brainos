@@ -7,6 +7,8 @@
 #include <time.h>
 #include "board.h"
 #include "capture.h"
+#include "chat.h"
+#include "cost.h"
 #include "keyboard.h"
 #include "config.h"
 #include "export.h"
@@ -41,55 +43,98 @@ void logf(const char *fmt, ...) {
 
 // ---------------------------------------------------------------- recording
 
-static bool recordingAsk;   // the Up button is the one held
+// Held OK: a new note. Held Up: a new chat note. Held Down: in a note, a recording appended to
+// it; in the passing chat, the next question; anywhere else, a new passing chat.
+enum RecKind { REC_NOTE, REC_CHAT_NOTE, REC_DOWN };
+static RecKind recording;
 static bool keepRecording() {
-  if (recordingAsk ? upDown() : okDown()) return true;
-  if (uiListeningDone()) uiRender(false);   // "Saving…" the moment OK is let go
+  if (recording == REC_NOTE ? okDown() : recording == REC_CHAT_NOTE ? upDown() : downDown()) return true;
+  if (uiListeningDone()) uiRender(false);   // "Saving…" the moment the button is let go
   return false;
 }
 
-static void recordNote(bool ask) {
-  recordingAsk = ask;
-  beep(2600, 40);
-  Screen before = screen == SCREEN_LISTENING ? SCREEN_NOTES : screen;
+static void record(int how) {   // a RecKind (an int: the sketch's generated prototypes come before the enum)
+  RecKind kind = (RecKind)how;
+  Screen before = screen;
+  if (before == SCREEN_LISTENING || (kind == REC_DOWN && before == SCREEN_KEYBOARD)) return;
+  Note *into = nullptr;   // Down in a note: append to it
+  if (kind == REC_DOWN && before == SCREEN_NOTE) {
+    into = notesFind(uiOpenNoteId());
+    if (into && into->archived) into = nullptr;   // an archived note isn't added to: a passing chat instead
+  }
+  if (kind == REC_DOWN && ((into && into->busy()) || (before == SCREEN_CHAT && chat.waiting()))) { uiSay("Still transcribing the last one"); return; }
+  if (before == SCREEN_EXPORT) { exportDone(true); screenGhostReset(); }
+  recording = kind;
   uiGo(SCREEN_LISTENING);
   String path, id;
   int secs = captureRecord(keepRecording, path, id);
   okConsume();
+  lastActivity = millis();   // a recording counts as a touch: the sleep timer starts after it
   if (!secs) {
     Serial.printf("capture: %s\n", captureError());
-    uiGo(before == SCREEN_LOCK ? SCREEN_LOCK : SCREEN_NOTES);
+    uiGo(before == SCREEN_EXPORT ? SCREEN_SETTINGS : before);
     return;
   }
+  if (kind == REC_DOWN && into) {
+    into = notesFind(uiOpenNoteId());   // the list may have moved while recording
+    if (into) {
+      int at = into->text.length() ? into->text.length() + 2 : 0;
+      into->audio = path; into->secs = secs; into->modified = time(nullptr);
+      notesSave();
+      uiOpenNote(into->id, at);   // the page where the addition starts
+      return;
+    }
+  }
+  if (kind == REC_DOWN) {
+    if (before != SCREEN_CHAT) chatClear();
+    chatRecorded(path, secs);
+    uiOpenChat(before);
+    return;
+  }
+  chatClear();   // a new note leaves the passing chat behind
   Note &n = notesAdd("", path, secs, id);   // the file is named after the id
-  if (ask) { n.asked = true; notesSave(); }
-  beep(2000, 60);
-  uiShowSaved(secs);
+  if (kind == REC_CHAT_NOTE) { n.asked = true; notesSave(); }
+  uiOpenNote(n.id, 0);
 }
 
 // Settings -> Update: a check, or an install, run on the loop (Update writes flash: not a PSRAM-stack task).
 static bool updCheckAsk, updInstallAsk, updBusyInstalling;
 bool updateQueued() { return updCheckAsk || updInstallAsk; }
 bool updateInstalling() { return updBusyInstalling; }
-void updateRequest(bool install) { if (install) updInstallAsk = true; else updCheckAsk = true; netTouch(); uiRender(false); }
+void updateRequest(bool install) { if (install) updInstallAsk = true; else updCheckAsk = true; uiRender(false); }
 static void updateTick() {
   if (updCheckAsk || updInstallAsk) {
     bool install = updInstallAsk;
     updCheckAsk = updInstallAsk = false;
-    if (!netUp()) { Serial.println("update: no wifi"); uiRender(false); return; }
+    if (!netUp()) { Serial.println("update: no wifi"); updNoWifi(); uiRender(false); return; }
     if (install) { updBusyInstalling = true; uiRender(false); updInstall(); updBusyInstalling = false; }   // "Installing" stays on screen; a success restarts
     else updCheck();
     uiRender(false);
   }
 }
 
-static void goToSleep() {   // on battery: the lock screen stays on the e-paper; OK wakes, another OK unlocks where it was
+// Seconds to just after the next local midnight, when the timer wakes the board to change the
+// date on the lock screen; 0 while the time is unknown.
+static uint32_t secsToMidnight() {
+  time_t t = time(nullptr);
+  if (t < 1700000000) return 0;
+  struct tm tm; localtime_r(&t, &tm);
+  tm.tm_mday += 1; tm.tm_hour = 0; tm.tm_min = 0; tm.tm_sec = 30; tm.tm_isdst = -1;
+  time_t next = mktime(&tm);
+  return next > t ? next - t : 60;
+}
+
+// Asleep, everything is off: the lock screen stays on the e-paper with a padlock. OK wakes it
+// (to the lock screen, without the padlock; another OK unlocks where it was), and so does
+// midnight, for a moment, to change the date.
+static void goToSleep() {
   updMarkGood("sleep");
-  uiLock();
+  uiSleeping(true);
+  uiLock();   // the passing chat, if open, is left behind
   uiRender(true);
   uiSaveForSleep();
   screenSleep();
-  deepSleep();
+  deepSleep(secsToMidnight());
 }
 
 // `nettest`: a small GET to OpenRouter (key + TLS) on the loop task.
@@ -127,7 +172,13 @@ static void shot() {
 static void serialCommand(char *line) {
   int Y, M, D, h, m, x, y;
   if (!strcmp(line, "shot")) shot();
-  else if (!strcmp(line, "stats")) { logHeap("stats"); Serial.printf("stats: refreshes full %d partial %d, uptime %lu s, screen %d, notes %d, pending %d\n", refreshCount(true), refreshCount(false), millis() / 1000, screen, notesCount(false), notesPending()); }
+  else if (!strcmp(line, "stats")) {
+    logHeap("stats");
+    Serial.printf("stats: refreshes full %d partial %d, uptime %lu s, screen %d, notes %d, pending %d\n", refreshCount(true), refreshCount(false), millis() / 1000, screen, notesCount(false), notesPending());
+    Serial.printf("stats: key %s, transcription %s, assistant %s, panel %s, battery %d mV, free RAM %u KB, PSRAM %u KB, spent %s in all\n", sttConfigured() ? "set" : "not set",
+                  cfg::str("stt.model").c_str(), cfg::str("ask.model").c_str(), panelName, now.millivolts, (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+                  (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024), costText(costTotal()).c_str());
+  }
   else if (!strcmp(line, "sleep")) goToSleep();
   else if (sscanf(line, "time %d-%d-%d %d:%d", &Y, &M, &D, &h, &m) == 5) {
     struct tm t = {}; t.tm_year = Y - 1900; t.tm_mon = M - 1; t.tm_mday = D; t.tm_hour = h; t.tm_min = m;
@@ -149,8 +200,8 @@ static void serialCommand(char *line) {
     std::vector<WifiCred> nets = cfg::wifiNetworks();
     nets.push_back({String(line + 9), String(sp + 1)});
     String err; cfg::setWifi(nets, err);
-    Serial.printf("wifi: %s\n", err.length() ? err.c_str() : "saved"); netTouch();
-  } else if (!strcmp(line, "wifi")) { Serial.printf("wifi: %s %s %d dBm, wanted %d, %u networks saved, key %s, pending %d\n", netUp() ? "up" : "down", netAddress().c_str(), netSignal(), netWanted(), (unsigned)cfg::wifiNetworks().size(), sttConfigured() ? "set" : "none", notesPending()); }
+    Serial.printf("wifi: %s\n", err.length() ? err.c_str() : "saved");
+  } else if (!strcmp(line, "wifi")) { Serial.printf("wifi: %s %s %d dBm, %u networks saved, key %s, pending %d\n", netUp() ? "up" : "down", netAddress().c_str(), netSignal(), (unsigned)cfg::wifiNetworks().size(), sttConfigured() ? "set" : "none", notesPending()); }
   else if (!strcmp(line, "nettest")) netTest();
   else if (!strcmp(line, "wifi seen")) {   // are the saved networks in range? (prints no other names)
     std::vector<NetSeen> seen; String why; netScan(seen, why);
@@ -182,7 +233,6 @@ void setup() {
   cfg::begin();
   setenv("TZ", cfg::str("device.timezone").c_str(), 1);
   tzset();
-  soundOn = cfg::flag("sound");
   if (!screenBegin()) Serial.println("screen: FAILED");
   else Serial.printf("screen: ok (%s)\n", panelName);
   screenRotation(PORTRAIT);
@@ -190,13 +240,20 @@ void setup() {
   readSensors();
   rtcBegin();
   rtcToSystem();
-  if (!touchBegin()) Serial.println("touch: FAILED");
   if (!LittleFS.begin(true)) Serial.println("fs: FAILED");
   notesBegin();
+  esp_sleep_wakeup_cause_t why = esp_sleep_get_wakeup_cause();
+  if (why == ESP_SLEEP_WAKEUP_TIMER) {   // midnight: the new date, and back to sleep (an early wake just sleeps on)
+    Serial.println("brainos: the midnight wake");
+    uiRestoreAfterSleep();
+    screen = SCREEN_LOCK;
+    goToSleep();
+  }
+  costBegin();
+  if (!touchBegin()) Serial.println("touch: FAILED");
   netBegin();
   sttBegin();
   webBegin();
-  esp_sleep_wakeup_cause_t why = esp_sleep_get_wakeup_cause();
   if (why == ESP_SLEEP_WAKEUP_EXT1 && uiRestoreAfterSleep()) uiRender(false);  // the lock screen stayed; unlocking goes back where it was
   else { screen = SCREEN_LOCK; uiRender(true); }
   lastActivity = millis();
@@ -205,25 +262,22 @@ void setup() {
 }
 
 void loop() {
-  static uint32_t lastMinute, savedAt;
+  static uint32_t lastMinute;
   TouchEvent te = touchPoll();
-  if (te.kind != TOUCH_NONE) netTouch();
   if (te.kind == TOUCH_TAP) { Serial.printf("touch: tap %d, %d\n", te.x, te.y); uiTap(te.x, te.y); }
   else if (te.kind == TOUCH_SWIPE) uiSwipe(te.x, te.y, te.dx, te.dy);
 
   ButtonPoll bp = buttonsPoll();
-  if (bp.event != BTN_NONE) netTouch();
   switch (bp.event) {
-    case BTN_OK: beep(2600, 30); uiOk(); break;
-    case BTN_OK_HOLD: recordNote(false); break;
-    case BTN_UP_HOLD: recordNote(true); break;
-    case BTN_MOVE: beep(2600, 30); uiMove(bp.move); break;
-    case BTN_BOTH: beep(2600, 30); uiLock(); break;
-    case BTN_BOTH_LONG: beep(1300, 120); goToSleep(); break;
+    case BTN_OK: uiOk(); break;
+    case BTN_OK_HOLD: record(REC_NOTE); break;
+    case BTN_UP_HOLD: record(REC_CHAT_NOTE); break;
+    case BTN_DOWN_HOLD: record(REC_DOWN); break;
+    case BTN_MOVE: uiMove(bp.move); break;
+    case BTN_BOTH: uiLock(); break;
+    case BTN_BOTH_LONG: goToSleep(); break;
     default: break;
   }
-  if (screen == SCREEN_SAVED) { if (!savedAt) savedAt = millis(); else if (millis() - savedAt > 2500) { savedAt = 0; uiGo(SCREEN_NOTES); } }
-  else savedAt = 0;
 
   if (redrawDue()) uiRender(false);
   serialPoll();
@@ -234,15 +288,14 @@ void loop() {
   updateTick();
   if (updPendingVerify() && (netUp() || millis() > 60000)) updMarkGood(netUp() ? "online" : "60 s up");
 
-  if (millis() - lastMinute > 60000) {  // the clock and the battery, with a cheap partial refresh
+  static long sleepMin = -1;
+  if (sleepMin < 0 || millis() - lastMinute > 60000) {  // the battery, the date, the setting: once a minute
     lastMinute = millis();
     readSensors();
-    if (screen == SCREEN_LOCK) uiRender(false);
+    uiMinute();
+    sleepMin = cfg::num("sleep.min");
   }
-  static long sleepMin = -1;
-  if (sleepMin < 0 || millis() - lastMinute < 20) sleepMin = cfg::num("sleep.min");   // read once a minute (and right after the page saved it)
-  if (sleepMin > 0 && !now.usb && millis() - lastActivity > (uint32_t)sleepMin * 60000 && !sttRunning() && screen != SCREEN_EXPORT) {
-    goToSleep();
-  }
+  // On battery, asleep a few minutes after the last touch or button; a request in flight finishes first.
+  if (!now.usb && millis() - lastActivity > (uint32_t)sleepMin * 60000 && !sttRunning()) goToSleep();
   delay(10);
 }

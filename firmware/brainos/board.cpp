@@ -8,7 +8,6 @@
 Readings now;
 i2c_master_bus_handle_t sensorBus;
 static i2c_master_dev_handle_t gauge;
-bool soundOn = true;
 
 // ---------------------------------------------------------------- buttons
 
@@ -31,38 +30,36 @@ static void IRAM_ATTR buttonEdge(int pin, volatile bool &isDown, volatile uint32
 
 bool okDown() { return digitalRead(PIN_BTN_OK) == LOW; }
 bool upDown() { return digitalRead(PIN_BTN_UP) == LOW; }
+bool downDown() { return digitalRead(PIN_BTN_DOWN) == LOW; }
 void okConsume() { okPresses = 0; }
 
 ButtonPoll buttonsPoll() {
-  static bool bothWas, okWas, okHeld, upWas, upHeld;
-  static uint32_t bothDownAt, okDownAt, upDownAt;
+  static bool bothWas, okWas, okHeld, upWas, upHeld, downWas, downHeld;
+  static uint32_t bothDownAt, okDownAt, upDownAt, downDownAt;
   ButtonPoll r = {BTN_NONE, 0};
-  bool ok = okDown(), up = digitalRead(PIN_BTN_UP) == LOW, down = digitalRead(PIN_BTN_DOWN) == LOW;
+  bool ok = okDown(), up = upDown(), down = downDown();
   if (ok || up || down) lastActivity = millis();
   if (!up && millis() - upAt > 60) upIsDown = false;  // a release the interrupt took for bounce
   if (!down && millis() - downAt > 60) downIsDown = false;
   if (!ok && millis() - okAt > 60) okIsDown = false;
 
-  // UP and DOWN held together for 2 s: sleep. Otherwise every press counted since the last look moves.
+  // UP and DOWN held together for 2 s: sleep. Otherwise every press counted since the last look
+  // moves, on release (a press held 400 ms is a hold instead, and moves nothing).
   if (up && down) {
     if (!bothWas) bothDownAt = millis();
     bothWas = true;
+    upHeld = downHeld = true;   // neither one becomes a hold of its own
     if (millis() - bothDownAt > 2000) { bothWas = false; r.event = BTN_BOTH_LONG; return r; }
   } else if (!up && !down) {
     noInterrupts();
     int move = bothWas ? 0 : downPresses - upPresses;
-    upPresses = downPresses = 0;
+    upPresses = 0; downPresses = 0;
     interrupts();
+    upWas = downWas = upHeld = downHeld = false;
     if (bothWas) { bothWas = false; r.event = BTN_BOTH; return r; }
     if (move) { r.event = BTN_MOVE; r.move = move; return r; }
-  } else if (down && !bothWas && millis() - downAt > 60) {  // Down, still down: act now, not on release
-    noInterrupts();
-    int move = downPresses - upPresses;
-    upPresses = downPresses = 0;
-    interrupts();
-    if (move) { r.event = BTN_MOVE; r.move = move; return r; }
   }
-  // Up alone: held 400 ms asks the assistant (a recording); a shorter press moves on release.
+  // Up or Down alone, held 400 ms: a recording (Up asks the assistant, Down appends or chats).
   if (up && !down && !bothWas) {
     if (!upWas) { upDownAt = millis(); upHeld = false; }
     upWas = true;
@@ -75,6 +72,19 @@ ButtonPoll buttonsPoll() {
   } else if (upWas && !up) {
     upWas = false;
     if (upHeld) { noInterrupts(); upPresses = 0; interrupts(); upHeld = false; }
+  }
+  if (down && !up && !bothWas) {
+    if (!downWas) { downDownAt = millis(); downHeld = false; }
+    downWas = true;
+    if (!downHeld && millis() - downDownAt > 400) {
+      downHeld = true;
+      noInterrupts(); downPresses = 0; interrupts();
+      r.event = BTN_DOWN_HOLD;
+      return r;
+    }
+  } else if (downWas && !down) {
+    downWas = false;
+    if (downHeld) { noInterrupts(); downPresses = 0; interrupts(); downHeld = false; }
   }
 
   // OK: held 400 ms is a hold (voice); a short press is an action on release.
@@ -124,13 +134,6 @@ static void holdAt(int pin, int level) {
   gpio_hold_en((gpio_num_t)pin);
 }
 
-void beep(int hz, int ms) {
-  if (!soundOn) return;
-  tone(PIN_BUZZER, hz, ms);
-  delay(ms + 10);
-  noTone(PIN_BUZZER);
-}
-
 void boardBegin() {
   powerLatch();
   chargerEnable();
@@ -139,6 +142,7 @@ void boardBegin() {
   pinMode(PIN_BTN_DOWN, INPUT_PULLUP);
   pinMode(PIN_EXTERNAL_POWER, INPUT);
   pinMode(PIN_BUZZER, OUTPUT);
+  digitalWrite(PIN_BUZZER, LOW);   // never sounds
   attachInterrupt(PIN_BTN_UP, [] { buttonEdge(PIN_BTN_UP, upIsDown, upAt, upPresses); }, CHANGE);
   attachInterrupt(PIN_BTN_DOWN, [] { buttonEdge(PIN_BTN_DOWN, downIsDown, downAt, downPresses); }, CHANGE);
   attachInterrupt(PIN_BTN_OK, [] { buttonEdge(PIN_BTN_OK, okIsDown, okAt, okPresses); }, CHANGE);
@@ -150,7 +154,7 @@ void logHeap(const char *step) {
                 (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
-void deepSleep() {
+void deepSleep(uint32_t wakeAfterS) {
   while (okDown()) delay(20);  // or the held button wakes it at once
   delay(60);
   holdAt(PIN_POWER_HOLD, 1);
@@ -163,7 +167,8 @@ void deepSleep() {
   gpio_hold_en((gpio_num_t)PIN_BTN_OK);
   esp_sleep_enable_ext1_wakeup_io(1ULL << PIN_BTN_OK, ESP_EXT1_WAKEUP_ANY_LOW);
   gpio_deep_sleep_hold_en();
-  Serial.println("power: deep sleep, OK wakes");
+  if (wakeAfterS) esp_sleep_enable_timer_wakeup((uint64_t)wakeAfterS * 1000000ULL);
+  Serial.printf("power: deep sleep, OK wakes%s\n", wakeAfterS ? (String(", and the timer in ") + wakeAfterS + " s").c_str() : "");
   Serial.flush();
   esp_deep_sleep_start();
 }

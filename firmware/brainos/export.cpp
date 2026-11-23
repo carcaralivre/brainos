@@ -30,7 +30,7 @@ bool exportStart() {
   char b[8]; snprintf(b, sizeof(b), "%04x", (unsigned)(esp_random() & 0xFFFF)); batch = b;
   auto &all = notesAll();
   std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && !all[i].audio.length() && all[i].text.length()) idx.push_back(i);   // everything that is not archived, exported before or not
+  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && all[i].text.length()) idx.push_back(i);   // everything that is not archived (a note still waiting goes with the text it has)
   if (idx.empty()) return false;
   std::sort(idx.begin(), idx.end(), [&](int a, int c) { return all[a].created < all[c].created; });
   String head = "{\"v\":1,\"b\":\"" + batch + "\",\"i\":I,\"n\":N,\"dev\":" + pj::esc(cfg::str("device.name")) + ",\"notes\":[";
@@ -93,7 +93,7 @@ void exportDraw(bool armed) {
   textCentre(W / 2, qrY + qrPx + 86, F_S12, b);
   textCentre(W / 2, UI_FOOT_Y - 20, F_S9, "Instructions at brain.local");
   bool archive = cfg::flag("export.archive");
-  const char *label = !armed ? (archive ? "Archive all" : "Mark all exported") : archive ? "Yes, archive all" : "Yes, mark all exported";
+  const char *label = !archive ? "Done" : armed ? "Yes, archive all" : "Archive all";
   uiButton(UI_MARGIN, UI_FOOT_Y, W - 2 * UI_MARGIN, UI_BTN, label, armed);
 }
 
@@ -106,13 +106,10 @@ void exportTick() {
 }
 
 void exportDone(bool keep) {
-  if (!keep) {
-    bool archive = cfg::flag("export.archive");
+  if (!keep && cfg::flag("export.archive")) {
     for (auto &id : ids) {
       Note *n = notesFind(id);
-      if (!n) continue;
-      n->exported = true;
-      if (archive) { n->archived = true; n->pinned = false; }
+      if (n) { n->archived = true; n->pinned = false; }
     }
     if (!ids.empty()) notesSave();
   }

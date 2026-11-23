@@ -42,16 +42,7 @@ static String bootTag;
 // What the last check found to install; the network task's own.
 static String binUrl, shaUrl, shaHex, binTag;
 static size_t binSize;
-static bool binHttpOk;    // plain http allowed for the checksum and binary (OTA_HTTP builds only)
-// Plain http for the feed, the checksum and the binary only in a build made
-// with -DSTICKY_OTA_ALLOW_HTTP (a test server on a computer). Every other
-// build, the releases included, refuses anything but https, also when
-// update.url points elsewhere and on every redirect.
-#ifdef STICKY_OTA_ALLOW_HTTP
-static const bool OTA_HTTP = true;
-#else
-static const bool OTA_HTTP = false;
-#endif
+static bool binHttpOk;    // plain http for the checksum and binary: never (GitHub is https)
 // NVS "brainos_ota": "try" is the version an install restarted into, so the next start can
 // say whether it kept running.
 static const char *const NVS_NS = "brainos_ota";
@@ -163,6 +154,9 @@ void updMarkGood(const char *why) {
   esp_err_t e = esp_ota_mark_app_valid_cancel_rollback();
   Serial.printf("update: %s kept (%s): %s\n", updVersion(), why, esp_err_to_name(e));
 }
+
+static void setStatus(uint8_t state, const String &status, bool failed);
+void updNoWifi() { setStatus(UPD_IDLE, "No Wi-Fi", true); info.checkedMs = millis(); }
 
 UpdInfo updInfo() {
   UpdInfo r = info;
@@ -411,19 +405,17 @@ static bool isHex64(const String &s) {
 // ---------------------------------------------------------------- check
 
 bool updCheck() {
-  String feed = cfg::str("update.url");
-  bool custom = feed.length() > 0;
-  const char *where = custom ? "the release feed" : "GitHub";
-  if (!custom) feed = GITHUB_FEED;
-  setStatus(UPD_CHECKING, "Checking...", false);
-  Serial.printf("update: checking %s\n", custom ? feed.c_str() : "GitHub");
+  String feed = GITHUB_FEED;
+  const char *where = "GitHub";
+  setStatus(UPD_CHECKING, "Checking…", false);
+  Serial.println("update: checking GitHub");
 
   BufferSink json(FEED_MAX);
   String why;
-  int code = httpGet(feed, custom && OTA_HTTP, !custom, json, why);
+  int code = httpGet(feed, false, true, json, why);
   if (code != 200 && !(json.full && json.len)) {
     String status;
-    if (code == 404) status = custom ? "No release at the feed's address" : "No release published yet";
+    if (code == 404) status = "No release published yet";
     else if (code == 403 || code == 429) status = (fmt("%s is busy (rate limit): try later", where));
     else status = netFailText(where, code);
     Serial.printf("update: check failed: %s (%s)\n", why.c_str(), status.c_str());
@@ -488,7 +480,7 @@ bool updCheck() {
   shaUrl = shaAsset;
   shaHex = sha;
   binTag = tag;
-  binHttpOk = custom && OTA_HTTP;
+  binHttpOk = false;
   info.state = UPD_IDLE;
   info.status = status;
   info.failed = (newer || updIsDev()) && !url.length();

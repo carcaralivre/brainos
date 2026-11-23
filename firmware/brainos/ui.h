@@ -1,7 +1,7 @@
 // The screens and how taps, buttons and swipes move between them.
 #pragma once
 #include <Arduino.h>
-enum Screen { SCREEN_LOCK, SCREEN_NOTES, SCREEN_NOTE, SCREEN_ARCHIVE, SCREEN_EXPORT, SCREEN_SETTINGS, SCREEN_LISTENING, SCREEN_SAVED,
+enum Screen { SCREEN_LOCK, SCREEN_NOTES, SCREEN_NOTE, SCREEN_ARCHIVE, SCREEN_EXPORT, SCREEN_SETTINGS, SCREEN_LISTENING, SCREEN_CHAT,
               SCREEN_KEYBOARD, SCREEN_WIFI, SCREEN_WIFI_SCAN, SCREEN_ABOUT };
 extern Screen screen;
 void uiRender(bool full);
@@ -13,7 +13,12 @@ void uiLock();               // lock, remembering where to come back to
 void uiSaveForSleep();       // before deep sleep (the picture stays as it is)
 bool uiRestoreAfterSleep();  // after a wake: the same screen, no lock
 void uiGo(Screen s);         // open a screen and draw it
-void uiShowSaved(int secs);  // after a recording: "Saved" for a moment
+void uiOpenNote(const String &id, int focus);   // open a note at the page holding byte `focus` of its text (0: the top)
+void uiOpenChat(Screen back);   // the passing chat, opened from `back`
+String uiOpenNoteId();          // the note on SCREEN_NOTE
+void uiSay(const char *msg);    // a line above the buttons of the note or the chat, until the next press
+void uiSleeping(bool on);       // the lock screen shows the padlock (drawn before deep sleep)
+void uiMinute();                // once a minute: redraw the lock screen if the battery or the date changed
 void uiNotesChanged();
 bool uiKeyboardShown();
 // The geometry every screen shares: a 56 px top bar, 24 px side margins, buttons 52 px tall

@@ -28,7 +28,9 @@ static bool parseLine(const String &line, Note &n) {
   if (pj::member(v, "s", f) && pj::num(f, num)) n.secs = num;
   if (pj::member(v, "p", f) && pj::boolean(f, b)) n.pinned = b;
   if (pj::member(v, "ar", f) && pj::boolean(f, b)) n.archived = b;
-  if (pj::member(v, "x", f) && pj::boolean(f, b)) n.exported = b;
+  if (pj::member(v, "o", f)) pj::str(f, n.orig);
+  if (pj::member(v, "k", f) && pj::num(f, num)) n.cost = num;
+  if (pj::member(v, "td", f) && pj::boolean(f, b)) n.tidying = b;
   if (pj::member(v, "q", f) && pj::boolean(f, b)) n.asked = b;
   if (pj::member(v, "qw", f) && pj::boolean(f, b)) n.asking = b;
   return true;
@@ -39,7 +41,9 @@ static String lineOf(const Note &n) {
   if (n.audio.length()) s += ",\"a\":" + pj::esc(n.audio) + ",\"s\":" + String(n.secs);
   if (n.pinned) s += ",\"p\":true";
   if (n.archived) s += ",\"ar\":true";
-  if (n.exported) s += ",\"x\":true";
+  if (n.orig.length()) s += ",\"o\":" + pj::esc(n.orig);
+  if (n.cost) s += ",\"k\":" + String(n.cost);
+  if (n.tidying) s += ",\"td\":true";
   if (n.asked) s += ",\"q\":true";
   if (n.asking) s += ",\"qw\":true";
   return s + "}";
@@ -100,10 +104,10 @@ Note &notesAdd(const String &text, const String &audio, uint16_t secs, const Str
   return items.back();
 }
 
-void notesRemove(const String &id) {
+void notesRemove(const String &id, bool keepAudio) {
   for (size_t i = 0; i < items.size(); i++)
     if (items[i].id == id) {
-      if (items[i].audio.length()) LittleFS.remove(items[i].audio);
+      if (items[i].audio.length() && !keepAudio) LittleFS.remove(items[i].audio);
       items.erase(items.begin() + i);
       notesSave();
       return;
@@ -118,7 +122,6 @@ int notesCount(bool archived) {
 
 int notesPending() {
   int c = 0;
-  for (auto &n : items) if (n.asking) c++;
-  for (auto &n : items) if (n.audio.length()) c++;
+  for (auto &n : items) if (n.busy()) c++;
   return c;
 }

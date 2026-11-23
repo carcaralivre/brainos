@@ -1,16 +1,13 @@
-// Wi-Fi: on while awake (or, with wifi.idle_min set, for a while after the last interaction and
-// while recordings wait). The clock, brain.local and TLS helpers live here too.
+// Wi-Fi: always on while the board is awake (asleep, everything is off). The clock, brain.local
+// and TLS helpers live here too.
 #pragma once
 #include <Arduino.h>
 #include <WiFiClientSecure.h>
 #include <vector>
 
 void netBegin();
-void netTouch();                 // an interaction: keeps the radio on for another wifi.idle_min
 void netTick();                  // call from loop(): joins, times out, switches off
 bool netUp();
-bool netWanted();                // the window is open (or work is pending)
-void netSetBusy(bool);           // a request is in flight: the radio stays on
 String netName();
 String netAddress();
 int netSignal();

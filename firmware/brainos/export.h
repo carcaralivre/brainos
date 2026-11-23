@@ -1,10 +1,10 @@
-// Export: the notes not yet exported, as a loop of QR codes read by the brainos-reader page.
+// Export: the notes on the list, as a loop of QR codes read by the brainos-reader page.
 #pragma once
 #include <Arduino.h>
 bool exportStart();              // false: nothing to export
-void exportDraw(bool armed);   // armed: Done was tapped once, the button asks to confirm               // the current part (call inside a render)
+void exportDraw(bool armed);     // the current part (call inside a render); armed: Archive all was tapped once
 void exportTick();               // from loop(): the next part every couple of seconds
-void exportDone(bool keep);      // OK: mark exported (and archive if set); keep = cancel without marking
+void exportDone(bool keep);      // the button: archive them (when set); keep = leave without archiving
 int exportParts();
 int exportPart();
 int exportNotes();

@@ -1,5 +1,4 @@
-// Over-the-air updates from GitHub Releases (carcaralivre/brainos), or from
-// the feed in the setting update.url (a test server).
+// Over-the-air updates from GitHub Releases (carcaralivre/brainos).
 //
 // A check reads the feed's newest release (GitHub's releases/latest JSON:
 // tag_name, body, and the assets brainos.bin and brainos.bin.sha256).
@@ -37,6 +36,7 @@ void updBegin();           // early in setup(): logs the slot and its rollback s
 bool updPendingVerify();   // this firmware is on trial: a restart now would go back
 void updMarkGood(const char *why);  // keeps this firmware (no-op when not on trial)
 UpdInfo updInfo();
+void updNoWifi();          // a check or install asked for without Wi-Fi: the status says "No Wi-Fi"
 
 // updCheck: true if the feed answered (even "no release").
 bool updCheck();

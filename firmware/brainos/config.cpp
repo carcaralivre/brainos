@@ -4,7 +4,7 @@
 void logf(const char *fmt, ...);  // the sketch: a line on the serial port
 
 enum CfgType : uint8_t { CFG_STR, CFG_INT, CFG_BOOL, CFG_WIFI };
-enum CfgCheck : uint8_t { CHK_TEXT, CHK_TOKEN, CHK_URL, CHK_TZ };   // how a string is checked before it is accepted
+enum CfgCheck : uint8_t { CHK_TEXT, CHK_TOKEN, CHK_TZ };   // how a string is checked before it is accepted
 
 struct CfgKey {
   const char *name;   // "stt.model"
@@ -28,11 +28,8 @@ static const CfgKey KEYS[] = {
   {"stt.prompt",        "stt_prompt",CFG_STR,   false, CHK_TEXT,  0,   500,   ""},      // style hints and words for the transcription
   {"ask.model",         "ask_model", CFG_STR,   false, CHK_TOKEN, 1,   64,    "openai/gpt-4o-mini"},   // answers a question recorded with Up
   {"ask.prompt",        "ask_prompt",CFG_STR,   false, CHK_TEXT,  0,   500,   "Answer briefly, in the language of the question, in at most three sentences."},
-  {"wifi.idle_min",     "wifi_idle", CFG_INT,   false, CHK_TEXT,  0,   1440,  "15"},    // minutes of Wi-Fi after the last interaction; 0: always on
-  {"sleep.min",         "sleep_min", CFG_INT,   false, CHK_TEXT,  0,   1440,  "30"},    // minutes on battery without a touch before deep sleep; 0: never
+  {"sleep.min",         "sleep_min3",CFG_INT,   false, CHK_TEXT,  1,   1440,  "3"},     // minutes on battery without a touch or a button before deep sleep (a new NVS key: the old 30 is left behind)
   {"export.archive",    "exp_arch",  CFG_BOOL,  false, CHK_TEXT,  0,   0,     "true"},
-  {"sound",             "sound",     CFG_BOOL,  false, CHK_TEXT,  0,   0,     "false"},
-  {"update.url",        "upd_url",   CFG_STR,   false, CHK_URL,   0,   200,   ""},      // release feed; empty: GitHub
 };
 static const size_t N = sizeof(KEYS) / sizeof(KEYS[0]);
 static const char *NS = "pcfg0";   // the namespace the earlier versions wrote: nothing to migrate
@@ -113,7 +110,6 @@ static bool checkString(const CfgKey &k, const String &v, String &err) {
   switch (k.check) {
     case CHK_TEXT: ok = validUtf8(v); break;
     case CHK_TOKEN: ok = printableAscii(v); break;
-    case CHK_URL: ok = printableAscii(v) && (v.startsWith("http://") || v.startsWith("https://")) && v.length() > 8; break;
     case CHK_TZ: ok = printableAscii(v) && (isalpha((unsigned char)v[0]) || v[0] == '<'); break;
   }
   if (!ok) err = String(k.name) + ": not a valid value";
