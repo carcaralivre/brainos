@@ -16,35 +16,40 @@ String fitted(const GFXfont *font, String s, int width) {
   return s + "...";
 }
 
-std::vector<String> wrapped(const GFXfont *font, const String &s, int width) {
+// Lines of at most `width`, broken at spaces (a word too long for a line is cut). `starts`, when
+// given, gets each line's first byte in `s`, so a cursor can be placed.
+static std::vector<String> wrapInto(const GFXfont *font, const String &s, int width, std::vector<int> *starts) {
   std::vector<String> lines;
   String line;
-  int from = 0;
+  int from = 0, lineStart = 0;
+  auto push = [&](const String &l, int at) { lines.push_back(l); if (starts) starts->push_back(at); };
   while (from < (int)s.length()) {
-    int space = s.indexOf(' ', from);
+    int space = s.indexOf(' ', from), wordStart = from;
     String word = s.substring(from, space < 0 ? s.length() : space);
     from = space < 0 ? s.length() : space + 1;
     String tryLine = line.length() ? line + " " + word : word;
-    if (textW(font, tryLine.c_str()) <= width) { line = tryLine; continue; }
-    if (line.length()) lines.push_back(line);
+    if (textW(font, tryLine.c_str()) <= width) { if (!line.length()) lineStart = wordStart; line = tryLine; continue; }
+    if (line.length()) push(line, lineStart);
+    lineStart = wordStart;
     while (textW(font, word.c_str()) > width) {
       int n = word.length();
       while (textW(font, word.substring(0, n).c_str()) > width) { int back = utf8Back(word.c_str(), n); if (back <= 0) break; n = back; }
-      lines.push_back(word.substring(0, n));
+      push(word.substring(0, n), lineStart);
       word = word.substring(n);
+      lineStart += n;
     }
     line = word;
   }
-  if (line.length()) lines.push_back(line);
+  if (line.length()) push(line, lineStart);
   return lines;
 }
+std::vector<String> wrapped(const GFXfont *font, const String &s, int width) { return wrapInto(font, s, width, nullptr); }
 
-enum KeyCode { K_SHIFT = 1, K_BACK, K_LAYER, K_MORE, K_ACCENTS };
+enum KeyCode { K_SHIFT = 1, K_BACK, K_LAYER, K_MORE, K_LEFT, K_RIGHT };
 struct KeyBox { int16_t x, y, w, h; uint16_t code; };
 static const int PITCH = 80, KB_MAX_KEYS = 48;
 static int keyboardHeight() { return 4 * PITCH + 2; }
 static const char *const LETTERS[] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
-static const char *ACCENTS = "áàâãçéêíóôõú";
 
 static int kbRow(const char *row, uint16_t *out, int max) {
   int n = 0;
@@ -58,14 +63,8 @@ static int keyboardKeys(const Keyboard &kb, int keysY, KeyBox *out) {
   const int M = 2, GAP = 5, kh = PITCH - 8;
   uint16_t rows[3][16];
   int len[3] = {0, 0, 0};
-  if (kb.layer == 3) {
-    uint16_t all[30];
-    int n = kbRow(ACCENTS, all, 30);
-    for (int k = 0; k < n; k++) { int r = k < 10 ? 0 : k < 20 ? 1 : 2; rows[r][len[r]++] = all[k]; }
-  } else {
-    const char *const *src = kb.layer == 2 ? MORE : kb.layer == 1 ? SYMBOLS : LETTERS;
-    for (int r = 0; r < 3; r++) len[r] = kbRow(src[r], rows[r], 16);
-  }
+  const char *const *src = kb.layer == 2 ? MORE : kb.layer == 1 ? SYMBOLS : LETTERS;
+  for (int r = 0; r < 3; r++) len[r] = kbRow(src[r], rows[r], 16);
   int cols = max(10, max(len[0], max(len[1], len[2] + 2)));
   int n = 0;
   auto px = [&](int half, int halves) { return M + half * (W - 2 * M) / halves; };
@@ -82,23 +81,24 @@ static int keyboardKeys(const Keyboard &kb, int keysY, KeyBox *out) {
   add(2, 0, side, H2, kb.layer == 1 || kb.layer == 2 ? K_MORE : K_SHIFT);
   for (int i = 0; i < len[2]; i++) add(2, cols - len[2] + 2 * i, cols - len[2] + 2 * i + 2, H2, rows[2][i]);
   add(2, H2 - side, H2, H2, K_BACK);
-  add(3, 0, 3, 20, K_LAYER);
-  add(3, 3, 5, 20, ',');
-  add(3, 5, 16, 20, ' ');
-  add(3, 16, 18, 20, K_ACCENTS);
-  add(3, 18, 20, 20, '.');
+  add(3, 0, 8, 48, K_LAYER);    // in 48ths of the width: ?123, comma, space, full stop, the two arrows (equal)
+  add(3, 8, 12, 48, ',');
+  add(3, 12, 30, 48, ' ');
+  add(3, 30, 34, 48, '.');
+  add(3, 34, 41, 48, K_LEFT);
+  add(3, 41, 48, 48, K_RIGHT);
   return n;
 }
 
 void keyboardBegin(Keyboard &kb, const String &text, const char *label, const char *hint, int maxLen) {
-  kb.text = text; kb.label = label; kb.hint = hint; kb.note = "";
+  kb.text = text; kb.label = label; kb.hint = hint; kb.note = ""; kb.cursor = text.length();
   kb.layer = 0; kb.shift = text.length() ? 0 : 1; kb.shiftAt = 0; kb.maxLen = maxLen;
 
 }
 
 static void keyboardAutoShift(Keyboard &kb) {
   if (kb.shift == 2) return;
-  String t = kb.text;
+  String t = kb.text.substring(0, kb.cursor);
   kb.shift = !t.length() || t.endsWith(". ") || t.endsWith("? ") || t.endsWith("! ") ? 1 : 0;
   kb.shiftAt = 0;
 }
@@ -109,14 +109,18 @@ static void keyboardField(Keyboard &kb, int x, int y, int w, int h) {
   const GFXfont *f = F_S12;
   const int LINE = 30, tx = x + 14, tw = w - 32;
   int maxLines = max(1, (h - 10) / LINE), top = maxLines == 1 ? y + (h - LINE) / 2 : y + 6;
-  std::vector<String> lines = wrapped(f, kb.text, tw);
-  if (kb.text.endsWith(" ") && lines.size()) lines.back() += " ";
-  if (lines.empty()) lines.push_back("");
+  std::vector<int> starts;
+  std::vector<String> lines = wrapInto(f, kb.text, tw, &starts);
+  if (lines.empty()) { lines.push_back(""); starts.push_back(0); }
+  int cl = 0;   // the cursor's line: the last one that starts at or before it
+  for (size_t i = 0; i < starts.size(); i++) if (starts[i] <= kb.cursor) cl = i;
+  int col = min(kb.cursor - starts[cl], (int)lines[cl].length());
+  String before = kb.text.substring(starts[cl], starts[cl] + col);   // what is left of the cursor on its line (a trailing space included)
   int first = max(0, (int)lines.size() - maxLines);
-  int baseline = top;
-  for (int i = first; i < (int)lines.size(); i++) { baseline = top + (i - first) * LINE + 21; text(tx, baseline, f, lines[i].c_str()); }
-  int cx = canvas->getCursorX() + 1;
-  if (!kb.text.length()) { cx = tx; text(tx + 8, baseline, f, fitted(f, kb.hint, tw - 8).c_str()); }
+  if (cl < first) first = cl;
+  for (int i = first; i < (int)lines.size() && i < first + maxLines; i++) text(tx, top + (i - first) * LINE + 21, f, lines[i].c_str());
+  int baseline = top + (cl - first) * LINE + 21, cx = tx + textW(f, before.c_str()) + (before.length() ? 1 : 0);
+  if (!kb.text.length()) text(tx + 8, baseline, f, fitted(f, kb.hint, tw - 8).c_str());
   canvas->fillRect(cx, baseline - 19, 3, 25, INK);
 }
 
@@ -153,7 +157,8 @@ static void keyboardDrawKeys(Keyboard &kb, int top) {
         break;
       case K_LAYER: keyLabel(cx, cy, F_B12, kb.layer == 1 || kb.layer == 2 ? "ABC" : "?123", 8); break;
       case K_MORE: keyLabel(cx, cy, F_B12, kb.layer == 2 ? "?123" : "=\\<", 8); break;
-      case K_ACCENTS: keyLabel(cx, cy, F_B12, kb.layer == 3 ? "abc" : "ãç", 7); break;
+      case K_LEFT: canvas->fillTriangle(cx + 7, cy - 11, cx + 7, cy + 11, cx - 8, cy, fg); break;
+      case K_RIGHT: canvas->fillTriangle(cx - 7, cy - 11, cx - 7, cy + 11, cx + 8, cy, fg); break;
       case ' ': keyLabel(cx, cy, F_S9, "space", 5); break;
       default: {
         uint32_t c = kb.shift ? cpUpper(k.code) : k.code;
@@ -200,21 +205,29 @@ KbResult keyboardTap(Keyboard &kb, int x, int y) {
       kb.shiftAt = millis();
       return KB_CHANGED;
     case K_BACK: {
-      if (!kb.text.length()) return KB_NONE;
-      int i = kb.text.length() - 1;
-      while (i > 0 && (kb.text[i] & 0xC0) == 0x80) i--;
-      kb.text.remove(i);
+      if (!kb.cursor) return KB_NONE;
+      int i = utf8Back(kb.text.c_str(), kb.cursor);
+      kb.text.remove(i, kb.cursor - i);
+      kb.cursor = i;
       keyboardAutoShift(kb);
       return KB_CHANGED;
     }
     case K_LAYER: kb.layer = kb.layer == 1 || kb.layer == 2 ? 0 : 1; return KB_CHANGED;
     case K_MORE: kb.layer = kb.layer == 2 ? 1 : 2; return KB_CHANGED;
-    case K_ACCENTS: kb.layer = kb.layer == 3 ? 0 : 3; return KB_CHANGED;
+    case K_LEFT: keyboardMove(kb, -1); return KB_CHANGED;
+    case K_RIGHT: keyboardMove(kb, 1); return KB_CHANGED;
   }
   if (utf8Count(kb.text.c_str()) >= kb.maxLen) return KB_NONE;
   uint32_t c = kb.shift ? cpUpper(code) : code;
-  utf8Append(kb.text, c);
+  String ch; utf8Append(ch, c);
+  kb.text = kb.text.substring(0, kb.cursor) + ch + kb.text.substring(kb.cursor);
+  kb.cursor += ch.length();
   if (kb.shift == 1) kb.shift = 0;
   if (c == ' ') { if (kb.layer) kb.layer = 0; keyboardAutoShift(kb); }
   return KB_CHANGED;
+}
+
+void keyboardMove(Keyboard &kb, int by) {
+  if (by < 0 && kb.cursor > 0) kb.cursor = utf8Back(kb.text.c_str(), kb.cursor);
+  else if (by > 0 && kb.cursor < (int)kb.text.length()) { int i = kb.cursor; utf8Next(kb.text.c_str(), i); kb.cursor = i; }
 }

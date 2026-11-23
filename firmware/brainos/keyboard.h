@@ -8,7 +8,8 @@
 enum KbResult { KB_NONE, KB_CHANGED, KB_DONE, KB_CANCEL };
 struct Keyboard {
   String text, label, hint, note;
-  int layer = 0;          // 0 letters, 1 digits and symbols, 2 more symbols, 3 accented letters
+  int cursor = 0;         // byte offset in text where typing goes
+  int layer = 0;          // 0 letters, 1 digits and symbols, 2 more symbols
   int shift = 0;          // 0 off, 1 the next letter, 2 caps lock
   uint32_t shiftAt = 0;
   int maxLen = 120;
@@ -17,6 +18,7 @@ struct Keyboard {
 void keyboardBegin(Keyboard &kb, const String &text, const char *label, const char *hint, int maxLen);
 void keyboardDraw(Keyboard &kb);                   // the title, the field, Cancel | Done, the keys (bottom of the screen)
 KbResult keyboardTap(Keyboard &kb, int x, int y);
+void keyboardMove(Keyboard &kb, int by);          // the cursor one character left (-1) or right (+1)
 String fitted(const GFXfont *font, String s, int width);
 std::vector<String> wrapped(const GFXfont *font, const String &s, int width);
 // Typing on e-paper: a key marks the screen and loop() redraws once the taps pause.

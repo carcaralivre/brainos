@@ -8,6 +8,7 @@ extern const char *const VERSION;
 #include "config.h"
 #include "notes.h"
 #include "rtc.h"
+#include "provjson.h"
 
 // ESP-IDF's bundle of public root CAs, in the core's mbedtls library.
 extern const uint8_t caBundleStart[] asm("_binary_x509_crt_bundle_start");
@@ -19,6 +20,7 @@ static bool radioOn;             // what we asked for
 static int tryIndex = -1;        // the saved network being tried, -1: none
 static uint32_t tryAt, backoffUntil;
 static bool wasUp, clockStarted, rtcSynced, mdnsOn;
+static String locatedOn;   // the network the time zone and language were last taken from
 static volatile uint8_t lastReason;
 
 bool netUp() { return WiFi.status() == WL_CONNECTED; }
@@ -64,9 +66,42 @@ static void startClock() {
   rtcSynced = false;
 }
 
+// Where the board is, from its public address (ip-api.com, no key, nothing sent but the request):
+// the time zone follows every new network (travel), the language is filled in once, when it is empty.
+static void locate() {
+  if (locatedOn == WiFi.SSID()) return;
+  HTTPClient http; http.setTimeout(6000); http.setConnectTimeout(NET_CONNECT_MS);
+  if (!http.begin("http://ip-api.com/json/?fields=status,countryCode,offset")) return;
+  int code = http.GET();
+  String body; if (code == 200) netReadBody(http, body, 600);
+  http.end();
+  if (code != 200) { Serial.printf("locate: %d\n", code); return; }
+  pj::Val v, f; String status, country; long offset = 0;
+  if (!pj::parse(body.c_str(), body.length(), v) || !pj::member(v, "status", f) || !pj::str(f, status) || status != "success") { Serial.println("locate: no answer"); return; }
+  if (pj::member(v, "countryCode", f)) pj::str(f, country);
+  if (pj::member(v, "offset", f)) pj::num(f, offset);
+  locatedOn = WiFi.SSID();
+  // POSIX spells the offset backwards: UTC-3 is "<-03>3"; half hours become "<+0530>-5:30".
+  long mins = offset / 60, a = labs(mins);
+  char tz[24];
+  const char *west = mins < 0 ? "" : "-";   // west of UTC the POSIX offset is positive and written bare
+  if (a % 60) snprintf(tz, sizeof(tz), "<%c%02ld%02ld>%s%ld:%02ld", mins < 0 ? '-' : '+', a / 60, a % 60, west, a / 60, a % 60);
+  else snprintf(tz, sizeof(tz), "<%c%02ld>%s%ld", mins < 0 ? '-' : '+', a / 60, west, a / 60);
+  String err;
+  if (cfg::str("device.timezone") != tz && cfg::setStr("device.timezone", tz, err)) { setenv("TZ", tz, 1); tzset(); }
+  if (!cfg::str("stt.language").length() && country.length()) {
+    const char *lang = country == "BR" || country == "PT" || country == "AO" || country == "MZ" ? "pt"
+                     : country == "ES" || country == "MX" || country == "AR" || country == "CO" || country == "CL" || country == "PE" || country == "UY" ? "es"
+                     : country == "FR" || country == "BE" ? "fr" : country == "DE" || country == "AT" || country == "CH" ? "de" : country == "IT" ? "it" : "en";
+    cfg::setStr("stt.language", lang, err);
+  }
+  Serial.printf("locate: %s, UTC offset %ld min, tz %s, language %s\n", country.c_str(), mins, tz, cfg::str("stt.language").c_str());
+}
+
 static void joined() {
   Serial.printf("wifi: connected to %s, %s, %d dBm\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
   startClock();
+  locate();
   if (!mdnsOn) {
     mdnsOn = MDNS.begin("brain");
     if (mdnsOn) MDNS.addService("http", "tcp", 80);

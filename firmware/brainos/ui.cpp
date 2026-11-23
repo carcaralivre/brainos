@@ -53,6 +53,12 @@ static void iconPin(int x, int y) {         // 16 x 16: a push pin
 static void iconX(int x, int y) {           // 16 x 16: a cross, for Forget
   for (int i = 0; i < 16; i++) { canvas->fillRect(x + i, y + i, 2, 2, INK); canvas->fillRect(x + 15 - i, y + i, 2, 2, INK); }
 }
+static void iconBubble(int x, int y) {      // 16 x 16: a speech bubble, for a question to the assistant
+  canvas->drawRoundRect(x, y + 1, 16, 11, 4, INK);
+  canvas->drawRoundRect(x + 1, y + 2, 14, 9, 3, INK);
+  canvas->fillTriangle(x + 4, y + 11, x + 9, y + 11, x + 4, y + 16, INK);
+  canvas->fillRect(x + 5, y + 10, 3, 2, PAPER);
+}
 static void iconMic(int cx, int cy) {       // big, for the listening screen
   canvas->fillRoundRect(cx - 18, cy - 44, 36, 60, 18, INK);
   canvas->drawRoundRect(cx - 30, cy - 20, 60, 50, 24, INK);
@@ -129,8 +135,14 @@ void uiButton(int x, int y, int w, int h, const char *label, bool filled) {
 }
 static void button(int x, int y, int w, int h, const char *label, bool filled) { uiButton(x, y, w, h, label, filled); }
 
-static String waitingOr(const Note &n) {   // a recording still to be transcribed, or the text
-  return n.audio.length() ? String("Recording, ") + n.secs + " s, waiting for Wi-Fi" : n.text;
+static String waitingOr(const Note &n) {   // a recording still to be transcribed, a question still unanswered, or the text
+  if (n.audio.length()) return String(n.asked ? "Question, " : "Recording, ") + n.secs + " s, waiting for Wi-Fi";
+  return n.asking ? n.text + "\n\n(asking…)" : n.text;
+}
+static String previewOf(const Note &n) {   // in a list: a question shows what was asked, not the answer
+  String s = waitingOr(n);
+  int cut = n.asked ? s.indexOf("\n\n") : -1;
+  return cut > 0 ? s.substring(0, cut) : s;
 }
 
 // ---------------------------------------------------------------- the list (Notes and Archive)
@@ -190,13 +202,15 @@ static void drawList(bool archived) {
       continue;
     }
     const Note &n = all[r.noteIndex];
-    String body = waitingOr(n);
-    auto lines = wrapLines(F_S12, body, W - 48 - 64 - (n.pinned ? 22 : 0), 2);
+    String body = previewOf(n);
+    auto lines = wrapLines(F_S12, body, W - 48 - 64 - (n.pinned ? 22 : 0) - (n.asked ? 22 : 0), 2);
     int first = y + r.h / 2 + 8 - (lines.size() > 1 ? 12 : 0);   // the text block centred in the row
     for (size_t i = 0; i < lines.size(); i++) text(24, first + i * 24, F_S12, lines[i].c_str());
     String at = timeOf(n.created, false);
     textRight(W - 24, first - 2, F_S9, at.c_str());
-    if (n.pinned) iconPin(W - 24 - textW(F_S9, at.c_str()) - 10 - 16, first - 15);   // beside the time, on its line
+    int ix = W - 24 - textW(F_S9, at.c_str()) - 10 - 16;   // the marks, right to left: pin, then bubble
+    if (n.pinned) { iconPin(ix, first - 15); ix -= 22; }
+    if (n.asked) iconBubble(ix, first - 15);
     canvas->drawFastHLine(24, y + r.h - 1, W - 48, INK);
   }
   if (!any) textCentre(W / 2, H / 2, F_S12, archived ? "The archive is empty" : "No notes yet");
@@ -239,10 +253,11 @@ static void drawLock() {
       if (!p.pinned) continue;
       int maxLines = (bottom - top - 30) / 26;
       if (maxLines < 1) break;
-      auto lines = wrapLines(F_S12, waitingOr(p), W - 48 - 56, min(maxLines, 4));
+      auto lines = wrapLines(F_S12, previewOf(p), W - 48 - 56 - (p.asked ? 24 : 0), min(maxLines, 4));
       int height = 30 + 26 * max<int>(1, lines.size());
       canvas->drawRoundRect(24, top, W - 48, height, 8, INK);
       iconPin(W - 48, top + height / 2 - 8);   // centred in the box
+      if (p.asked) iconBubble(W - 48 - 24, top + height / 2 - 8);
       for (size_t k = 0; k < lines.size(); k++) text(40, top + 34 + k * 26, F_S12, lines[k].c_str());
       lockBoxes.push_back({top, height, p.id});
       top += height + 12;
@@ -331,19 +346,25 @@ static void iconLock(int x, int y) {   // 12 x 16: a small padlock
   canvas->fillRect(x, y + 7, 12, 9, INK);
 }
 static const size_t SCAN_A_PAGE = 8;
+static int scanPage;   // the page of found networks shown
+static int scanPages() { return max<int>(1, (seen.size() + SCAN_A_PAGE - 1) / SCAN_A_PAGE); }
 static int scanRowH() { return (H - LIST_TOP - LIST_BOTTOM_PAD) / SCAN_A_PAGE; }
 static void drawWifiScan() {
   topBar("Networks", true);
   if (seen.empty()) textCentre(W / 2, H / 2, F_S12, "None found");
   int rowH = scanRowH();
-  for (size_t i = 0; i < seen.size() && i < SCAN_A_PAGE; i++) {
+  scanPage = constrain(scanPage, 0, scanPages() - 1);
+  for (size_t k = 0; k < SCAN_A_PAGE; k++) {
+    size_t i = scanPage * SCAN_A_PAGE + k;
+    if (i >= seen.size()) break;
     int bars = seen[i].rssi > -55 ? 4 : seen[i].rssi > -67 ? 3 : seen[i].rssi > -78 ? 2 : 1;
-    int y = LIST_TOP + i * rowH;
+    int y = LIST_TOP + k * rowH;
     text(24, y + rowH / 2 + 8, F_S12, fitted(F_S12, seen[i].ssid, W - 48 - 70).c_str());
     iconSignal(W - 24 - 22, y + rowH / 2 - 8, bars);
     if (seen[i].secure) iconLock(W - 24 - 22 - 24, y + rowH / 2 - 8);
     canvas->drawFastHLine(24, y + rowH - 1, W - 48, INK);
   }
+  if (scanPages() > 1) { String p = String(scanPage + 1) + " / " + scanPages(); textRight(W - 24, 38, F_S9, p.c_str()); }
   button(24, FOOT_Y, W - 48, 52, "Scan again", false);
 }
 
@@ -375,6 +396,7 @@ static void startWifiScan() {
   canvas->fillScreen(PAPER); topBar("Networks", false); textCentre(W / 2, H / 2, F_S12, "Scanning…"); show(false);
   String why;
   netScan(seen, why);
+  scanPage = 0;
   uiGo(SCREEN_WIFI_SCAN);
 }
 
@@ -557,8 +579,8 @@ void uiTap(int x, int y) {
     case SCREEN_WIFI_SCAN: {
       if (leftIcon(x, y)) { uiGo(SCREEN_WIFI); break; }
       if (inFooter(y)) { startWifiScan(); break; }
-      int i = y < LIST_TOP ? -1 : (y - LIST_TOP) / scanRowH();
-      if (i >= 0 && i < (int)seen.size() && i < (int)SCAN_A_PAGE) {
+      int k = y < LIST_TOP ? -1 : (y - LIST_TOP) / scanRowH(), i = scanPage * SCAN_A_PAGE + k;
+      if (k >= 0 && k < (int)SCAN_A_PAGE && i < (int)seen.size()) {
         joinSsid = seen[i].ssid;
         if (!seen[i].secure) joinNetwork(joinSsid, "", SCREEN_WIFI_SCAN);
         else { keyboardBegin(kb, "", ("Password for " + joinSsid).c_str(), "", 64); kbPurpose = 2; kbBack = SCREEN_WIFI_SCAN; uiGo(SCREEN_KEYBOARD); }
@@ -578,7 +600,7 @@ void uiTap(int x, int y) {
 }
 
 void uiSwipe(int x, int y, int dx, int dy) {
-  if ((screen == SCREEN_NOTES || screen == SCREEN_ARCHIVE) && abs(dy) > abs(dx)) uiMove(dy < 0 ? 1 : -1);
+  if ((screen == SCREEN_NOTES || screen == SCREEN_ARCHIVE || screen == SCREEN_WIFI_SCAN) && abs(dy) > abs(dx)) uiMove(dy < 0 ? 1 : -1);
 }
 
 void uiOk() {
@@ -591,6 +613,7 @@ void uiOk() {
 }
 
 void uiMove(int by) {
+  if (screen == SCREEN_KEYBOARD) { keyboardMove(kb, by); uiRender(false); return; }   // Down: right, Up: left
   if (screen == SCREEN_NOTE) {
     Note *n = notesFind(openId);
     auto idx = listed(n && n->archived);
@@ -600,6 +623,11 @@ void uiMove(int by) {
         if (j >= 0 && j < (int)idx.size()) { openId = notesAll()[idx[j]].id; deleteArmed = false; uiRender(false); }
         return;
       }
+    return;
+  }
+  if (screen == SCREEN_WIFI_SCAN) {
+    int p = constrain(scanPage + by, 0, scanPages() - 1);
+    if (p != scanPage) { scanPage = p; uiRender(false); }
     return;
   }
   if (screen == SCREEN_NOTES || screen == SCREEN_ARCHIVE) {

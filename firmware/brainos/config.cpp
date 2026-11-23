@@ -25,6 +25,9 @@ static const CfgKey KEYS[] = {
   {"stt.api_key",       "stt_key",   CFG_STR,   true,  CHK_TOKEN, 20,  256,   ""},
   {"stt.model",         "stt_model", CFG_STR,   false, CHK_TOKEN, 1,   64,    "openai/gpt-4o-mini-transcribe"},
   {"stt.language",      "stt_lang",  CFG_STR,   false, CHK_TOKEN, 0,   5,     ""},
+  {"stt.prompt",        "stt_prompt",CFG_STR,   false, CHK_TEXT,  0,   500,   ""},      // style hints and words for the transcription
+  {"ask.model",         "ask_model", CFG_STR,   false, CHK_TOKEN, 1,   64,    "openai/gpt-4o-mini"},   // answers a question recorded with Up
+  {"ask.prompt",        "ask_prompt",CFG_STR,   false, CHK_TEXT,  0,   500,   "Answer briefly, in the language of the question, in at most three sentences."},
   {"wifi.idle_min",     "wifi_idle", CFG_INT,   false, CHK_TEXT,  0,   1440,  "15"},    // minutes of Wi-Fi after the last interaction; 0: always on
   {"sleep.min",         "sleep_min", CFG_INT,   false, CHK_TEXT,  0,   1440,  "30"},    // minutes on battery without a touch before deep sleep; 0: never
   {"export.archive",    "exp_arch",  CFG_BOOL,  false, CHK_TEXT,  0,   0,     "true"},

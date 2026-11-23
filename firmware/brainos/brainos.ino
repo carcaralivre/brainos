@@ -41,13 +41,15 @@ void logf(const char *fmt, ...) {
 
 // ---------------------------------------------------------------- recording
 
+static bool recordingAsk;   // the Up button is the one held
 static bool keepRecording() {
-  if (okDown()) return true;
+  if (recordingAsk ? upDown() : okDown()) return true;
   if (uiListeningDone()) uiRender(false);   // "Saving…" the moment OK is let go
   return false;
 }
 
-static void recordNote() {
+static void recordNote(bool ask) {
+  recordingAsk = ask;
   beep(2600, 40);
   Screen before = screen == SCREEN_LISTENING ? SCREEN_NOTES : screen;
   uiGo(SCREEN_LISTENING);
@@ -59,7 +61,8 @@ static void recordNote() {
     uiGo(before == SCREEN_LOCK ? SCREEN_LOCK : SCREEN_NOTES);
     return;
   }
-  notesAdd("", path, secs, id);   // the file is named after the id
+  Note &n = notesAdd("", path, secs, id);   // the file is named after the id
+  if (ask) { n.asked = true; notesSave(); }
   beep(2000, 60);
   uiShowSaved(secs);
 }
@@ -212,7 +215,8 @@ void loop() {
   if (bp.event != BTN_NONE) netTouch();
   switch (bp.event) {
     case BTN_OK: beep(2600, 30); uiOk(); break;
-    case BTN_OK_HOLD: recordNote(); break;
+    case BTN_OK_HOLD: recordNote(false); break;
+    case BTN_UP_HOLD: recordNote(true); break;
     case BTN_MOVE: beep(2600, 30); uiMove(bp.move); break;
     case BTN_BOTH: beep(2600, 30); uiLock(); break;
     case BTN_BOTH_LONG: beep(1300, 120); goToSleep(); break;

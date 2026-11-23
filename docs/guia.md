@@ -1,8 +1,9 @@
 # BrainOS: guia rápido (pt-BR)
 
 ## Botões e toques
+- **Segurar Cima**: grava uma pergunta. Depois da transcrição o assistente responde (modelo e instruções no brain.local) e a nota fica com a pergunta, uma linha em branco e a resposta; na lista ela leva um balãozinho ao lado da hora.
 - **Segurar OK** (o botão de cima): grava. Fale, solte. A nota aparece como "Recording, N s" e vira texto quando houver Wi-Fi e a chave do OpenRouter.
-- **OK curto**: tranca a tela de onde você estiver; outro clique destranca e volta exatamente para onde estava. No teclado vale como Done.
+- **OK curto**: tranca a tela de onde você estiver; outro clique destranca e volta exatamente para onde estava. No teclado vale como Done; Cima e Baixo movem o cursor (as setas ◀ ▶ do teclado também).
 - **Dormir**: na bateria, após 30 minutos sem uso, ele vai para a lock screen e dorme fundo; um clique em OK acorda, outro destranca onde você estava. Na tomada não dorme. O Wi-Fi fica sempre ligado enquanto acordado.
 - **Cima/Baixo**: passam as páginas da lista; com uma nota aberta, vão para a anterior e a seguinte.
 - **Cima + Baixo juntos**: tranca. Segurando os dois por 2 s: dorme (OK acorda).
@@ -10,7 +11,7 @@
 - **Fixadas**: até 3; aparecem no topo da lista e na lock screen. Ao fixar uma quarta, a fixada mais antiga é liberada.
 
 ## A página brain.local
-Com o aparelho na rede, abra http://brain.local no iPhone ou no Mac: lá dá para criar e editar notas, fixar, arquivar e apagar, exportar as notas da lista em Markdown (que as arquiva, como o QR), baixar tudo, adicionar e esquecer redes Wi-Fi, checar e instalar atualização, e mudar nome, fuso (menu), modelo de transcrição (menu), som (desligado de fábrica) e tempos (de fábrica: Wi-Fi 15 min após o último toque, dormir após 30 min na bateria). O botão no topo abre a página leitora de QR. Uma gravação ainda não transcrita não pode ser editada nem arquivada; se o serviço recusar o áudio de vez, a nota fica com "(not transcribed: …)" em vez de tentar para sempre.
+Com o aparelho na rede, abra http://brain.local no iPhone ou no Mac: lá dá para criar e editar notas, fixar, arquivar e apagar, exportar as notas da lista em Markdown (que as arquiva, como o QR), baixar tudo, adicionar e esquecer redes Wi-Fi, checar e instalar atualização, e mudar nome, fuso (menu; ao conectar numa rede nova o aparelho acerta o fuso sozinho pelo endereço de internet, e preenche o idioma da transcrição se estiver vazio), modelo de transcrição (menu), "Transcription style" (uma orientação para a transcrição: tudo minúsculo, sem ponto final, nomes que ele erra; funciona melhor com um exemplo), som (desligado de fábrica) e tempos (de fábrica: Wi-Fi 15 min após o último toque, dormir após 30 min na bateria). O botão no topo abre a página leitora de QR. Uma gravação ainda não transcrita não pode ser editada nem arquivada; se o serviço recusar o áudio de vez, a nota fica com "(not transcribed: …)" em vez de tentar para sempre.
 
 ## Rede e chave
 1. Settings → Wi-Fi → "Add a network": escolha a rede (o cadeado marca as com senha, as barras mostram o sinal), digite a senha, Done. "Scan again" procura de novo. Na lista de redes salvas, tocar no nome conecta nela (há um Cancel enquanto tenta); tocar no X (duas vezes) esquece.

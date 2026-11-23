@@ -30,11 +30,12 @@ static void IRAM_ATTR buttonEdge(int pin, volatile bool &isDown, volatile uint32
 }
 
 bool okDown() { return digitalRead(PIN_BTN_OK) == LOW; }
+bool upDown() { return digitalRead(PIN_BTN_UP) == LOW; }
 void okConsume() { okPresses = 0; }
 
 ButtonPoll buttonsPoll() {
-  static bool bothWas, okWas, okHeld;
-  static uint32_t bothDownAt, okDownAt;
+  static bool bothWas, okWas, okHeld, upWas, upHeld;
+  static uint32_t bothDownAt, okDownAt, upDownAt;
   ButtonPoll r = {BTN_NONE, 0};
   bool ok = okDown(), up = digitalRead(PIN_BTN_UP) == LOW, down = digitalRead(PIN_BTN_DOWN) == LOW;
   if (ok || up || down) lastActivity = millis();
@@ -54,12 +55,26 @@ ButtonPoll buttonsPoll() {
     interrupts();
     if (bothWas) { bothWas = false; r.event = BTN_BOTH; return r; }
     if (move) { r.event = BTN_MOVE; r.move = move; return r; }
-  } else if (!bothWas && millis() - (up ? upAt : downAt) > 60) {  // one button, still down: act now, not on release
+  } else if (down && !bothWas && millis() - downAt > 60) {  // Down, still down: act now, not on release
     noInterrupts();
     int move = downPresses - upPresses;
     upPresses = downPresses = 0;
     interrupts();
     if (move) { r.event = BTN_MOVE; r.move = move; return r; }
+  }
+  // Up alone: held 400 ms asks the assistant (a recording); a shorter press moves on release.
+  if (up && !down && !bothWas) {
+    if (!upWas) { upDownAt = millis(); upHeld = false; }
+    upWas = true;
+    if (!upHeld && millis() - upDownAt > 400) {
+      upHeld = true;
+      noInterrupts(); upPresses = 0; interrupts();
+      r.event = BTN_UP_HOLD;
+      return r;
+    }
+  } else if (upWas && !up) {
+    upWas = false;
+    if (upHeld) { noInterrupts(); upPresses = 0; interrupts(); upHeld = false; }
   }
 
   // OK: held 400 ms is a hold (voice); a short press is an action on release.

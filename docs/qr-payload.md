@@ -26,6 +26,7 @@ code holds one JSON object:
 | `notes[].id` | 8 hex digits, stable for the note's life |
 | `notes[].c` | created, unix seconds (UTC) |
 | `notes[].p` | 1 if the note is pinned on the board |
+| `notes[].q` | 1 if the note was a question to the assistant (the text is the question, a blank line, the answer) |
 | `notes[].t` | the text (UTF-8, JSON-escaped) |
 | `pad` | spaces, ignored: every part of a batch is padded to the same length, so all its codes have the same density |
 

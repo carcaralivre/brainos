@@ -29,6 +29,8 @@ static bool parseLine(const String &line, Note &n) {
   if (pj::member(v, "p", f) && pj::boolean(f, b)) n.pinned = b;
   if (pj::member(v, "ar", f) && pj::boolean(f, b)) n.archived = b;
   if (pj::member(v, "x", f) && pj::boolean(f, b)) n.exported = b;
+  if (pj::member(v, "q", f) && pj::boolean(f, b)) n.asked = b;
+  if (pj::member(v, "qw", f) && pj::boolean(f, b)) n.asking = b;
   return true;
 }
 
@@ -38,6 +40,8 @@ static String lineOf(const Note &n) {
   if (n.pinned) s += ",\"p\":true";
   if (n.archived) s += ",\"ar\":true";
   if (n.exported) s += ",\"x\":true";
+  if (n.asked) s += ",\"q\":true";
+  if (n.asking) s += ",\"qw\":true";
   return s + "}";
 }
 
@@ -114,6 +118,7 @@ int notesCount(bool archived) {
 
 int notesPending() {
   int c = 0;
+  for (auto &n : items) if (n.asking) c++;
   for (auto &n : items) if (n.audio.length()) c++;
   return c;
 }

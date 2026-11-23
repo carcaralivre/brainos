@@ -22,7 +22,7 @@ int exportPart() { return part; }
 int exportNotes() { return ids.size(); }
 
 static String noteJson(const Note &n) {
-  return "{\"id\":\"" + n.id + "\",\"c\":" + String(n.created) + ",\"p\":" + (n.pinned ? "1" : "0") + ",\"t\":" + pj::esc(n.text) + "}";
+  return "{\"id\":\"" + n.id + "\",\"c\":" + String(n.created) + ",\"p\":" + (n.pinned ? "1" : "0") + ",\"q\":" + (n.asked ? "1" : "0") + ",\"t\":" + pj::esc(n.text) + "}";
 }
 
 bool exportStart() {

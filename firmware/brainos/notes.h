@@ -11,6 +11,8 @@ struct Note {
   uint32_t created = 0, modified = 0;
   uint16_t secs = 0;  // recording length, for pending audio
   bool pinned = false, archived = false, exported = false;
+  bool asked = false;     // recorded with Up held: the text is the question, a blank line, the answer
+  bool asking = false;    // transcribed, the answer not in yet
 };
 
 void notesBegin();                                   // mount and load

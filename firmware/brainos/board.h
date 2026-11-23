@@ -23,11 +23,12 @@ void logHeap(const char *step);
 void deepSleep();       // the caller draws the sleeping screen first; OK wakes the board (a restart)
 
 // Buttons: polled each loop; presses are counted by interrupts so none is lost during a refresh.
-enum ButtonEvent { BTN_NONE, BTN_OK, BTN_OK_HOLD, BTN_MOVE, BTN_BOTH, BTN_BOTH_LONG };
+enum ButtonEvent { BTN_NONE, BTN_OK, BTN_OK_HOLD, BTN_UP_HOLD, BTN_MOVE, BTN_BOTH, BTN_BOTH_LONG };
 struct ButtonPoll {
   ButtonEvent event;
   int move;   // BTN_MOVE: +1 down, -1 up (counted presses)
 };
 ButtonPoll buttonsPoll();
 bool okDown();           // the OK button is held right now
+bool upDown();           // the Up button is held right now
 void okConsume();        // forget presses (after a held OK was acted on)
