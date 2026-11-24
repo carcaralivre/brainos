@@ -1,7 +1,7 @@
 # BrainOS QR export: the payload
 
 BrainOS exports notes as a loop of QR codes on its e-paper screen. The reader page
-(`brainos-reader`, a static web page) reads them with the phone's camera, in any order,
+(`site/reader/`, a static web page at https://carcaralivre.github.io/brainos/reader/) reads them with the phone's camera, in any order,
 and puts the batch back together.
 
 ## One QR code
@@ -49,5 +49,4 @@ Done) is tapped or OK is pressed. A note too long for one part goes in pieces; n
 exporting" is on (the default); with it off, the button is just "Done". Leaving with the back
 arrow changes nothing.
 
-A guide for adding BrainOS import to another app lives in the reader repository:
-`INTEGRATION.md` in github.com/carcaralivre/brainos-reader.
+A guide for adding BrainOS import to another app: [qr-integration.md](qr-integration.md).

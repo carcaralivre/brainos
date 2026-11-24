@@ -15,7 +15,7 @@ Built on [Sticky OS](https://github.com/Sticky-OS/sticky-os) (MIT): its screen, 
 - **Notes**: grouped by day. Open one to pin it, edit it, *Tidy* it (the assistant fixes punctuation and drops filler words; *Original* brings the text back), archive or delete it. *Cancel* stops waiting for an answer or for Tidy. A long note scrolls by pages with Up/Down; a swipe sideways goes to the next note.
 - **Costs**: each note shows what it cost (transcriptions and answers); the board's About and `brain.local` show the totals by day, week and month.
 - **brain.local**: a page on your network to paste the OpenRouter key, read, pin, tidy, archive and delete notes (with *Undo*), download them as Markdown, add Wi-Fi networks, and change settings. It reloads when the notes change, keeps the board awake while you use it (an open tab alone does not), and only takes changes from itself. The first visit makes its password; a browser gives it once and is remembered (forgotten: About on the board resets it).
-- **Export**: a loop of QR codes with the notes on the list (a long note goes in pieces, never cut); the [reader page](https://carcaralivre.github.io/brainos-reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
+- **Export**: a loop of QR codes with the notes on the list (a long note goes in pieces, never cut); the [reader page](https://carcaralivre.github.io/brainos/reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
 - **Archive**, **Settings** on the board (Wi-Fi with a scan and a keyboard, export, archive, about), **updates over Wi-Fi** from this repository's releases, with rollback.
 
 ## Install
@@ -69,7 +69,7 @@ Host tests (no board): `firmware/test/run.sh`.
 |---|---|
 | `firmware/brainos/` | the sketch: `board`, `screen`, `touch`, `rtc` (hardware); `notes`, `capture`, `stt`, `chat`, `cost`, `net`, `web`, `export`, `ota` (features); `ui`, `keyboard` (screens) |
 | `firmware/build.sh`, `firmware/tools/` | build, flash, screenshots, serial driving |
-| `site/` | the Install page (esp-web-tools), deployed to GitHub Pages by the Install-page workflow after each release |
+| `site/` | the QR reader page (`site/reader/`, with jsQR 1.4.0, Apache-2.0) and the Install page (esp-web-tools), deployed to GitHub Pages by the Install-page workflow after each release |
 | `docs/` | the QR payload spec, the guide, the spike's record |
 
 MIT, see LICENSE.

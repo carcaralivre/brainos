@@ -1,4 +1,4 @@
-// Export: the notes on the list, as a loop of QR codes read by the brainos-reader page.
+// Export: the notes on the list, as a loop of QR codes read by the reader page (site/reader/).
 #pragma once
 #include <Arduino.h>
 bool exportStart();              // false: nothing to export

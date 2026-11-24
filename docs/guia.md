@@ -43,7 +43,7 @@ Com o aparelho acordado e na rede, abra http://brain.local no iPhone ou no Mac: 
 2. No aparelho: Settings → About → **Create page password** (ou **Reset page password** se já existia). Você tem dois minutos. No iPhone ou Mac, na mesma rede: http://brain.local (ou o IP em Settings → About). Crie a senha da página, cole a chave do OpenRouter e Save. Sem o toque no aparelho a página não aceita criar senha.
 
 ## Exportar para o celular
-Settings → Export: as notas da lista vão nos QR codes, um por segundo; uma nota longa vai em pedaços que a página leitora junta de volta. Notas que ainda esperam transcrição, resposta ou Tidy ficam para o próximo export. No iPhone, abra a página leitora (https://carcaralivre.github.io/brainos-reader/), toque em Scan e aponte para a tela. Toque em "Archive all" no aparelho e confirme ("Yes, archive all"): as notas vão para o Archive (configurável no brain.local).
+Settings → Export: as notas da lista vão nos QR codes, um por segundo; uma nota longa vai em pedaços que a página leitora junta de volta. Notas que ainda esperam transcrição, resposta ou Tidy ficam para o próximo export. No iPhone, abra a página leitora (https://carcaralivre.github.io/brainos/reader/), toque em Scan e aponte para a tela. Toque em "Archive all" no aparelho e confirme ("Yes, archive all"): as notas vão para o Archive (configurável no brain.local).
 
 ## Atualizar
 Settings → About → Check for update; se houver versão nova, aparece o botão Install. Sem Wi-Fi, a tela diz "No Wi-Fi". Também dá pelo brain.local. Se a versão nova não ligar, o aparelho volta sozinho para a anterior.

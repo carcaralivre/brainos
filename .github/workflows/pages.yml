@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
-          mkdir -p public && cp site/index.html site/manifest.json public/ && cp -R site/esp-web-tools public/esp-web-tools
+          mkdir -p public && cp site/index.html site/manifest.json public/ && cp -R site/esp-web-tools public/esp-web-tools && cp -R site/reader public/reader
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern brainos-full.bin --dir public
           sed -i "s/VERSION/$TAG/" public/manifest.json public/index.html
           ls -l public

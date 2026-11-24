@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrainOS reader</title>
+<style>
+  :root { --bg:#faf8f4; --card:#f5f2ec; --sunken:#fdfcfa; --accent:#efebe3; --border:#e5e0d5; --fg:#1a1917; --muted:#6b6760; --tertiary:#716b62; --primary:#2d2d2b; --destructive:#a03030; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/20px Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 12px 12px 48px; }
+  header { position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--border); margin: 0 -12px 12px; padding: 0 12px; height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; }
+  .s { color: var(--muted); margin: 0 0 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; margin: 0 0 12px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  video { width: 100%; max-height: 60vh; background: #000; border-radius: 10px; display: none; margin: 12px 0 0; }
+  video.mirror { transform: scaleX(-1); }
+  canvas { display: none; }
+  .bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin: 12px 0 0; }
+  .bar div { height: 100%; background: var(--primary); width: 0; transition: width .2s; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button { font: 500 14px/20px Geist, -apple-system, sans-serif; padding: 0 12px; height: 36px; border-radius: 10px; border: 1px solid transparent; background: transparent; color: var(--fg); cursor: pointer; display: inline-flex; align-items: center; transition: background-color .1s; }
+  button:hover { background: var(--accent); }
+  button.o { border-color: var(--border); }
+  button.p { background: var(--primary); color: #fff; }
+  button.p:hover { background: #1a1917; }
+  .n { padding: 12px 0; border-top: 1px solid var(--border); }
+  .n:first-of-type { border-top: 0; }
+  .n p { margin: 0 0 6px; white-space: pre-wrap; }
+  .n .m { font: 11px/16px 'Geist Mono', ui-monospace, Menlo, monospace; color: var(--tertiary); margin-bottom: 8px; }
+  #status { margin: 12px 0 0; min-height: 20px; color: var(--muted); }
+  label.file { display: inline-block; }
+  input[type=file] { display: none; }
+  footer { color: var(--tertiary); font: 11px/16px 'Geist Mono', ui-monospace, Menlo, monospace; margin-top: 24px; }
+  a { color: var(--fg); }
+  .empty { border: 1px dashed var(--border); border-radius: 10px; padding: 10px 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>BrainOS reader</h1><a href="http://brain.local/">brain.local</a></header>
+<p class="s">Point the camera at the board while it shows the export codes. Any order works; the page waits until it has every part.</p>
+<div class="card">
+  <div class="row">
+    <button class="p" id="start">Scan</button>
+    <button class="o" id="stop" style="display:none">Stop</button>
+    <label class="file"><button type="button" class="o" onclick="document.getElementById('file').click()">Read an image</button><input type="file" id="file" accept="image/*"></label>
+  </div>
+  <video id="v" playsinline muted></video>
+  <canvas id="c"></canvas>
+  <div id="status"></div>
+  <div class="bar"><div id="prog"></div></div>
+</div>
+<div id="out"></div>
+<footer>Nothing is kept between visits. The board's own page is brain.local on the same Wi-Fi.</footer>
+</div>
+<script src="jsQR.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const video = $('v'), canvas = $('c'), ctx = canvas.getContext('2d', { willReadFrequently: true });
+  let stream = null, timer = null, batch = null, parts = {}, total = 0, dev = '';
+  const status = t => $('status').textContent = t;
+
+  function reset() { batch = null; parts = {}; total = 0; $('prog').style.width = '0'; }
+
+  function take(obj) {
+    if (!obj || obj.v !== 1 || !obj.b || !obj.i || !obj.n || !Array.isArray(obj.notes)) return false;
+    if (batch && obj.b !== batch) {
+      if (!confirm('This is another export (' + obj.b + '). Start over with it?')) return false;
+      reset();
+    }
+    batch = obj.b; total = obj.n; dev = obj.dev || '';
+    if (!parts[obj.i]) { parts[obj.i] = obj.notes; if (navigator.vibrate) navigator.vibrate(40); }
+    const have = Object.keys(parts).length;
+    $('prog').style.width = Math.round(100 * have / total) + '%';
+    if (have < total) {
+      const missing = []; for (let i = 1; i <= total; i++) if (!parts[i]) missing.push(i);
+      status('Part ' + have + ' of ' + total + ' read. Still missing: ' + missing.join(', '));
+      return true;
+    }
+    status('All ' + total + ' part' + (total > 1 ? 's' : '') + ' read.');
+    render();
+    stopScan();
+    return true;
+  }
+
+  function render() {
+    const notes = [];
+    for (let i = 1; i <= total; i++)
+      for (const n of parts[i]) {   // a long note comes in pieces (k of kn), in order: join them back
+        const last = notes[notes.length - 1];
+        if (n.kn > 1 && n.k > 1 && last && last.id === n.id) last.t += n.t;
+        else notes.push(Object.assign({}, n));
+      }
+    notes.reverse();
+    const out = $('out');
+    out.innerHTML = '';
+    out.className = 'card';
+    const head = document.createElement('div');
+    head.className = 'row'; head.innerHTML = '<p class="s" style="margin:0;flex:1">' + notes.length + ' note' + (notes.length === 1 ? '' : 's') + (dev ? ' from ' + esc(dev) : '') + '</p>';
+    const all = notes.map(n => when(n.c) + (n.p ? ' (pinned)' : '') + (n.q ? ' (asked)' : '') + '\n' + n.t).join('\n\n');
+    const copyAll = document.createElement('button'); copyAll.className = 'o'; copyAll.textContent = 'Copy all';
+    copyAll.onclick = () => copy(all, 'Copied ' + notes.length + ' note' + (notes.length === 1 ? '' : 's'));
+    head.appendChild(copyAll);
+    if (navigator.share) { const sh = document.createElement('button'); sh.className = 'o'; sh.textContent = 'Share'; sh.onclick = () => navigator.share({ title: 'BrainOS notes', text: all }); head.appendChild(sh); }
+    out.appendChild(head);
+    for (const n of notes) {
+      const d = document.createElement('div'); d.className = 'n';
+      d.innerHTML = '<p>' + esc(n.t) + '</p><div class="m">' + when(n.c) + (n.p ? ' · pinned' : '') + (n.q ? ' · asked' : '') + '</div>';
+      const b = document.createElement('button'); b.textContent = 'Copy';
+      b.onclick = () => copy(n.t, 'Copied');
+      d.appendChild(b);
+      out.appendChild(d);
+    }
+  }
+
+  function copy(text, done) {   // the clipboard API, or the old way where it is not allowed
+    const old = () => { const t = document.createElement('textarea'); t.value = text; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.focus(); t.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} t.remove(); status(ok ? done : 'Could not copy: select the text and copy it by hand'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => status(done), old); else old();
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function when(c) { const d = new Date(c * 1000); return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); }
+
+  function decodeFrame(src, w, h) {
+    canvas.width = w; canvas.height = h;
+    ctx.drawImage(src, 0, 0, w, h);
+    const img = ctx.getImageData(0, 0, w, h);
+    const code = jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
+    if (!code) return false;
+    try { return take(JSON.parse(code.data)); } catch (e) { status('A code, but not a BrainOS one'); return false; }
+  }
+
+  async function startScan() {
+    if (!navigator.mediaDevices) { status('No camera here: use "Read an image".'); return; }
+    if (batch && Object.keys(parts).length >= total) { reset(); $('out').innerHTML = ''; $('out').className = ''; }   // a new scan after a finished one starts clean
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    } catch (e) { status('Camera not allowed: ' + e.message); return; }
+    video.srcObject = stream; video.style.display = 'block';
+    const facing = (stream.getVideoTracks()[0].getSettings() || {}).facingMode;
+    video.classList.toggle('mirror', facing === 'user');   // a front camera shows as a mirror, like the phone's own camera app
+    await video.play();
+    $('start').style.display = 'none'; $('stop').style.display = '';
+    status(batch ? 'Scanning…' : 'Scanning: show the Sticky\'s export screen');
+    timer = setInterval(() => { if (video.videoWidth) decodeFrame(video, video.videoWidth, video.videoHeight); }, 150);
+  }
+  function stopScan() {
+    if (timer) clearInterval(timer); timer = null;
+    if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
+    video.style.display = 'none'; $('start').style.display = ''; $('stop').style.display = 'none';
+  }
+  $('start').onclick = startScan;
+  $('stop').onclick = () => { stopScan(); status('Stopped'); };
+  $('file').onchange = e => {
+    const f = e.target.files[0]; if (!f) return;
+    const img = new Image();
+    img.onload = () => { if (!decodeFrame(img, img.naturalWidth, img.naturalHeight)) status(status.textContent || 'No code found in that image'); };
+    img.src = URL.createObjectURL(f);
+  };
+  try { localStorage.removeItem('brainos-last'); } catch (e) {}   // older versions kept the last export here; the page now opens clean every time
+})();
+</script>
+</body>
+</html>

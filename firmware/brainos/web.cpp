@@ -27,7 +27,7 @@ extern void uiNotesChanged();
 extern void updateRequest(bool install);
 extern const char *const VERSION;
 
-static const char *READER = "https://carcaralivre.github.io/brainos-reader/";
+static const char *READER = "https://carcaralivre.github.io/brainos/reader/";
 
 // Undo: the notes as they were before the last delete, archive or export, for 6 s (a few more
 // here, for a slow phone). A deleted recording's audio file stays until then. Undoing an archive
