@@ -208,7 +208,7 @@ static void sendPage(const String &msg) {
   p += "<details><summary>Add a network</summary><form class='b' method='post' action='/wifi'><input type='hidden' name='do' value='add'><label for='ssid'>Network name</label><input type='text' id='ssid' name='ssid' autocapitalize='off' autocorrect='off'><label for='pass'>Password (empty for an open network)</label><input type='password' id='pass' name='pass' autocomplete='off'><p></p><input class='o' type='submit' value='Save network'></form></details></div>";
 
   p += "<div class='card'><h2>Settings</h2><form class='b' method='post' action='/settings'><input type='hidden' name='boxes' value='1'>";
-  p += "<label for='key'>OpenRouter API key</label><div class='row' style='margin-bottom:6px'>" + String(sttConfigured() ? "<span class='mute' style='margin:0'>Set. Paste a new one below to replace it</span>" : "<span class='mute' style='margin:0;color:var(--destructive)'>Not set. Recordings wait until a key is set</span>") + "</div><input type='password' id='key' name='key' placeholder='sk-or-…' autocomplete='off'>";
+  p += "<label for='key'>OpenRouter API key</label><div class='row' style='margin-bottom:6px'>" + String(sttConfigured() ? "<span class='mute' style='margin:0'>Set. Paste a new one below to replace it</span>" : "<span class='mute' style='margin:0;color:var(--destructive)'>Not set. Recordings wait until a key is set</span>") + "</div><div class='row'><input type='password' id='key' name='key' placeholder='sk-or-…' autocomplete='off' style='flex:1;width:auto'><input class='o' type='submit' value='Save key'></div>";
   String lang = cfg::str("stt.language");
   p += "<label for='lang'>Transcription language</label><select id='lang' name='lang'>";
   p += option("", "Let the model choose", lang);
@@ -371,7 +371,7 @@ static void handleSettings() {
   if (!err.length() && server.hasArg("askmodel")) cfg::setStr("ask.model", server.arg("askmodel"), err);
   if (!err.length() && server.hasArg("askprompt")) { String t = server.arg("askprompt"); t.replace("\r", ""); t.replace("\n", " "); t.trim(); cfg::setStr("ask.prompt", t, err); }
   if (!err.length() && server.hasArg("name")) cfg::setStr("device.name", server.arg("name"), err);
-  if (!err.length() && server.hasArg("tz") && cfg::setStr("device.timezone", server.arg("tz"), err)) {
+  if (!err.length() && server.hasArg("tz") && server.arg("tz") != cfg::str("device.timezone") && cfg::setStr("device.timezone", server.arg("tz"), err)) {   // only a change marks it picked by hand
     setenv("TZ", server.arg("tz").c_str(), 1); tzset();
     cfg::setFlag("device.tz_manual", true, err);
   }

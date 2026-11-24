@@ -64,7 +64,7 @@ void updBegin() {
   String tried;
   bool failed = false;
   if (p.begin(NVS_NS, false)) {
-    tried = p.getString("try", "");
+    if (p.isKey("try")) tried = p.getString("try", "");
     if (tried.length()) {
       p.remove("try");
       if (tried == updVersion()) {

@@ -19,6 +19,7 @@ static struct tm localDay(int daysAgo) {   // noon of that day, so a DST change 
 static uint32_t ymd(const struct tm &tm) { return (tm.tm_year + 1900) * 10000 + (tm.tm_mon + 1) * 100 + tm.tm_mday; }
 
 void costBegin() {
+  { Preferences p; if (p.begin("cost", false)) p.end(); }   // made once, so the read-only opens below find it (and log nothing)
   days.clear();
   File f = LittleFS.open(LOG, "r");
   if (!f) return;
