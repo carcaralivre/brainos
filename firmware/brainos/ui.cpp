@@ -75,11 +75,12 @@ static void iconMic(int cx, int cy) {       // big, for the listening screen
   canvas->fillRect(cx - 14, cy + 44, 28, 4, INK);
 }
 
-static void iconPadlock(int cx, int y) {   // big, where the clock was: on the lock screen while asleep
-  for (int t = 0; t < 7; t++) canvas->drawRoundRect(cx - 24 + t, y + t, 48 - 2 * t, 70 - 2 * t, 24 - t, INK);   // the shackle
-  canvas->fillRoundRect(cx - 34, y + 34, 68, 54, 8, INK);   // the body
-  canvas->fillCircle(cx, y + 56, 7, PAPER);                 // the keyhole
-  canvas->fillRect(cx - 3, y + 58, 6, 16, PAPER);
+static void iconPadlock(int cx, int y) {   // 16 x 16, thin: above "N notes" while the board sleeps
+  canvas->drawRoundRect(cx - 4, y, 9, 12, 4, INK);       // the shackle
+  canvas->drawRoundRect(cx - 3, y + 1, 7, 10, 3, INK);
+  canvas->fillRect(cx - 7, y + 6, 15, 10, PAPER);
+  canvas->drawRoundRect(cx - 7, y + 6, 15, 10, 2, INK);  // the body
+  canvas->drawRoundRect(cx - 6, y + 7, 13, 8, 2, INK);
 }
 static void dim(int x, int y, int w, int h) {   // grey on a 1-bit screen: every other pixel back to paper
   for (int j = y; j < y + h; j++) for (int i = x + ((j ^ x) & 1); i < x + w; i += 2) canvas->drawPixel(i, j, PAPER);
@@ -192,10 +193,16 @@ static String waitingOr(const Note &n) {   // the text, and what it waits for: a
   if (wait.length()) s += (s.length() ? "\n\n" : "") + wait;
   return s;
 }
-static String previewOf(const Note &n) {   // in a list: a chat shows what was asked first, not the answer
+// In a list and on the lock screen: one run of text, its line breaks as spaces (an addition
+// after a blank line reads on, no "…" where the paragraph ends); a chat shows its first question.
+static String previewOf(const Note &n) {
   String s = n.text.length() ? n.text : waitingOr(n);
   int cut = n.asked ? s.indexOf("\n\n") : -1;
-  return cut > 0 ? s.substring(0, cut) : s;
+  if (cut > 0) s = s.substring(0, cut);
+  s.replace("\n", " ");
+  while (s.indexOf("  ") >= 0) s.replace("  ", " ");
+  s.trim();
+  return s;
 }
 
 // ---------------------------------------------------------------- the list (Notes and Archive)
@@ -285,13 +292,13 @@ static int rowAt(int y) {  // the note index under y on the current page, or -1
 
 // ---------------------------------------------------------------- screens
 
-static String dateLine() {   // "Sunday, Nov 23"
+static String dateLine() {   // "Sunday\nNov 23": the day, then the date
   time_t t = time(nullptr);
-  if (t < 1700000000) return "Time not set";
+  if (t < 1700000000) return "Time not set\n";
   struct tm tm; localtime_r(&t, &tm);
   static const char *DAYS[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
   static const char *MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-  return String(DAYS[tm.tm_wday]) + ", " + MONTHS[tm.tm_mon] + " " + tm.tm_mday;
+  return String(DAYS[tm.tm_wday]) + "\n" + MONTHS[tm.tm_mon] + " " + tm.tm_mday;
 }
 static String batteryLine() { return now.battery ? String(now.percent) + "%" : String("--%"); }
 static String lockDrawn;   // the battery and the date the lock screen shows, for uiMinute
@@ -300,14 +307,15 @@ struct LockBox { int y, h; String id; };
 static std::vector<LockBox> lockBoxes;   // the pinned notes on the lock screen, for taps
 static void drawLock() {
   textCentre(W / 2, 32 + 17, F_S12, batteryLine().c_str());   // 32 px from the top edge of the text
-  if (asleep) iconPadlock(W / 2, 100);   // where the clock was, only while the board sleeps
   String date = dateLine();
-  textCentre(W / 2, 240, F_B18, date.c_str());
+  int cut = date.indexOf('\n');
+  textCentre(W / 2, 160, F_B24, date.substring(0, cut).c_str());   // the day, bold and big
+  textCentre(W / 2, 212, F_S18, date.substring(cut + 1).c_str());   // the date under it
   lockDrawn = batteryLine() + date;
   lockBoxes.clear();
   {  // the pinned notes (three at most), newest first, four lines each; a tap on one opens it
     auto idx = listed(false);
-    int top = 284, bottom = H - 64;
+    int top = 250, bottom = H - 90;
     for (int i : idx) {
       const Note &p = notesAll()[i];
       if (!p.pinned) continue;
@@ -327,6 +335,7 @@ static void drawLock() {
   char buf[32];
   snprintf(buf, sizeof(buf), "%d note%s", count, count == 1 ? "" : "s");
   textCentre(W / 2, H - 32, F_S12, buf);   // 32 px from the bottom
+  if (asleep) iconPadlock(W / 2, H - 76);    // small, just above "N notes", only while the board sleeps
 }
 
 static void drawNotes() {
@@ -344,7 +353,9 @@ static void drawNote() {
   Note *n = notesFind(openId);
   topBar("Note", true);
   if (!n) { textCentre(W / 2, H / 2, F_S12, "Gone"); return; }
-  text(24, BAR + 28, F_S9, timeOf(n->created, true).c_str());
+  String date = timeOf(n->created, true);
+  text(24, BAR + 28, F_S9, date.c_str());
+  if (n->asked) iconBubble(24 + textW(F_S9, date.c_str()) + 12, BAR + 15);   // a chat note: the bubble beside the date
   textRight(W - 24, BAR + 28, F_S9, costText(n->cost).c_str());
   int by = noteButtonsY(*n), top = BAR + 60;
   int per = max(1, (by - 16 - top) / 26 - (sayMsg.length() ? 1 : 0));
@@ -417,11 +428,24 @@ static int netRowH() { return (H - LIST_TOP - LIST_BOTTOM_PAD) / NETS_A_PAGE; }
 static int netRowAt(int y, int pg) { int k = y < LIST_TOP ? -1 : (y - LIST_TOP) / netRowH(); return k < 0 || k >= NETS_A_PAGE ? -1 : pg * NETS_A_PAGE + k; }
 static int netPages(size_t n) { return max<int>(1, (n + NETS_A_PAGE - 1) / NETS_A_PAGE); }
 
+// The saved networks as listed: the connected one first, the others A to Z. (The order they are
+// saved in, which the board tries them in, stays as it is.)
+static std::vector<WifiCred> shownNets() {
+  std::vector<WifiCred> nets = cfg::wifiNetworks();
+  String on = netUp() ? netName() : String();
+  std::sort(nets.begin(), nets.end(), [&](const WifiCred &a, const WifiCred &b) {
+    if ((a.ssid == on) != (b.ssid == on)) return a.ssid == on;
+    String x = a.ssid, y = b.ssid; x.toLowerCase(); y.toLowerCase();
+    return x < y;
+  });
+  return nets;
+}
+
 static int wifiPage;
 static const int FORGET_W = 132;   // the armed "Yes, forget" button at the end of a row
 static void drawWifi() {
   topBar("Wi-Fi", true);
-  std::vector<WifiCred> nets = cfg::wifiNetworks();
+  std::vector<WifiCred> nets = shownNets();
   wifiPage = constrain(wifiPage, 0, netPages(nets.size()) - 1);
   int rowH = netRowH();
   for (int k = 0; k < NETS_A_PAGE; k++) {
@@ -481,7 +505,6 @@ static void drawAbout() {
   String lines[] = {
     cfg::str("device.name"), String("BrainOS ") + VERSION,
     netUp() ? "Wi-Fi: " + netName() + ", " + netAddress() : "No Wi-Fi",
-    netUp() ? "Page: http://brain.local" : "",
     "Battery: " + batteryLine() + (now.usb ? ", charging" : ""),
     "Notes: " + String(notesCount(false)) + ", archived " + notesCount(true),
     "Today " + costText(costDaysAgo(0)) + " · This week " + costText(costWeeksAgo(0)) + " · This month " + costText(costMonthsAgo(0)),
@@ -722,11 +745,13 @@ void uiTap(int x, int y) {
       break;
     }
     case SCREEN_WIFI: {
-      std::vector<WifiCred> nets = cfg::wifiNetworks();
+      std::vector<WifiCred> nets = shownNets();
       int i = netRowAt(y, wifiPage);
       bool real = i >= 0 && i < (int)nets.size();
       if (real && forgetArmed == i && x >= W - 24 - FORGET_W) {   // the second tap forgets
-        nets.erase(nets.begin() + i); String e; cfg::setWifi(nets, e); forgetArmed = -1; wifiMsg = "Forgotten"; uiRender(false);
+        std::vector<WifiCred> saved = cfg::wifiNetworks();
+        for (size_t k = 0; k < saved.size(); k++) if (saved[k].ssid == nets[i].ssid) saved.erase(saved.begin() + k--);
+        String e; cfg::setWifi(saved, e); forgetArmed = -1; wifiMsg = "Forgotten"; uiRender(false);
         break;
       }
       if (disarm()) break;

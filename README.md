@@ -8,8 +8,8 @@ Built on [Sticky OS](https://github.com/Sticky-OS/sticky-os) (MIT): its screen, 
 
 ## What it does
 
-- **Two states**: awake, Wi-Fi is on, recordings and questions go out, and `brain.local` answers. Asleep, everything is off and the lock screen shows a padlock; only OK wakes it. On battery it sleeps 3 minutes after the last touch or button (a setting on `brain.local`); plugged in, never. At midnight it wakes for a moment to change the date.
-- **Lock screen**: battery, the date, up to three pinned notes, how many notes there are. A tap opens the list, a tap on a pinned note opens it, OK goes back to where you were.
+- **Two states**: awake, Wi-Fi is on, recordings and questions go out, and `brain.local` answers. Asleep, everything is off and the lock screen shows a small padlock; only OK wakes it. On battery it sleeps 3 minutes after the last touch or button (a setting on `brain.local`); plugged in, never. At midnight it wakes for a moment to change the date.
+- **Lock screen**: battery, the weekday and the date, up to three pinned notes, how many notes there are. A tap opens the list, a tap on a pinned note opens it, OK goes back to where you were.
 - **Hold a button** (anywhere):
   - **OK**: a new note. Speak, release; the note opens and its text arrives when there is Wi-Fi and an OpenRouter key.
   - **Up**: a new chat note: the question, then the assistant's answer (model and instructions on `brain.local`).

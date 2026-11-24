@@ -2,12 +2,12 @@
 
 ## Acordado e dormindo
 - **Acordado**: o Wi-Fi fica ligado, as gravações e perguntas pendentes são enviadas e o http://brain.local responde.
-- **Dormindo**: tudo desligado; a lock screen mostra um cadeado. Só o OK acorda: ele mostra a lock screen sem o cadeado, e outro OK destranca onde você estava.
+- **Dormindo**: tudo desligado; a lock screen mostra um cadeadinho acima de "N notes". Só o OK acorda: ele mostra a lock screen sem o cadeado, e outro OK destranca onde você estava.
 - **Na bateria** dorme 3 minutos depois do último toque ou botão (ajuste no brain.local). Se uma gravação ou pergunta estiver sendo enviada, termina e depois dorme. **Na tomada** nunca dorme.
 - À meia-noite ele acorda sozinho por um instante, troca a data da lock screen e volta a dormir.
 
 ## Lock screen
-Bateria, a data por extenso, até 3 notas fixadas (4 linhas cada; tachinha, e balão se for chat) e "N notes". Tocar numa fixada abre a nota; tocar fora abre a lista; OK volta para a tela de onde você trancou.
+Bateria, o dia da semana (grande, em negrito) e a data embaixo, até 3 notas fixadas (4 linhas cada; tachinha, e balão se for chat) e "N notes". Tocar numa fixada abre a nota; tocar fora abre a lista; OK volta para a tela de onde você trancou.
 
 ## Botões segurados
 | Onde | Segurar OK | Segurar Cima | Segurar Baixo |
@@ -25,7 +25,7 @@ Bateria, a data por extenso, até 3 notas fixadas (4 linhas cada; tachinha, e ba
 - **Cima/Baixo**: passam as páginas das listas. Numa nota curta, vão para a anterior e a seguinte; numa nota longa, rolam as páginas ("2 / 3" no topo). Deslizar para os lados troca de nota.
 - **Cima + Baixo juntos**: tranca. Segurando os dois por 2 s: dorme.
 - **Lista de notas**: a seta no canto esquerdo volta para a lock screen; New note abre o teclado (Done salva e abre a nota); Settings tem Wi-Fi, Export, Archive e About.
-- **Nota**: Pin, Edit, Tidy em cima; Archive e Delete embaixo. Enquanto a nota espera a nuvem, Edit, Tidy e Archive ficam apagados. **Tidy** pede ao assistente para corrigir a pontuação e tirar vícios de fala sem mudar o sentido; o original fica guardado e sai no Markdown como "(original: …)".
+- **Nota**: numa nota de chat, um balãozinho ao lado da data. Pin, Edit, Tidy em cima; Archive e Delete embaixo. Enquanto a nota espera a nuvem, Edit, Tidy e Archive ficam apagados. **Tidy** pede ao assistente para corrigir a pontuação e tirar vícios de fala sem mudar o sentido; o original fica guardado e sai no Markdown como "(original: …)".
 - **Apagar** (nota, arquivo, rede salva): o primeiro toque arma ("Yes, …"), o segundo confirma, tocar em outro lugar desarma.
 - **Fixadas**: até 3. Ao fixar uma quarta, a mais antiga é liberada.
 
@@ -36,7 +36,7 @@ Cada nota mostra, na linha da data, quanto custou (transcrições e respostas; "
 Com o aparelho acordado e na rede, abra http://brain.local no iPhone ou no Mac: criar, editar, fixar, Tidy, arquivar e apagar notas (apagar, arquivar e exportar têm **Undo** por 6 segundos), exportar as notas da lista em Markdown, baixar tudo, adicionar e esquecer redes Wi-Fi, checar e instalar atualização, e os ajustes: chave do OpenRouter, modelo de transcrição, "Transcription style", modelo e instruções do assistente, nome, fuso (ao conectar numa rede nova o aparelho acerta o fuso e o idioma sozinho) e minutos até dormir na bateria. O botão no topo abre a página leitora de QR.
 
 ## Rede e chave
-1. Settings → Wi-Fi → "Add a network": escolha a rede (o cadeado marca as com senha, as barras mostram o sinal), digite a senha, Done. "Scan again" procura de novo. Na lista de redes salvas, tocar no nome conecta (há um Cancel enquanto tenta); tocar no X arma ("Yes, forget") e o segundo toque esquece.
+1. Settings → Wi-Fi → "Add a network": escolha a rede (o cadeado marca as com senha, as barras mostram o sinal), digite a senha, Done. "Scan again" procura de novo. Na lista de redes salvas (a conectada no topo, as outras em ordem alfabética), tocar no nome conecta (há um Cancel enquanto tenta); tocar no X arma ("Yes, forget") e o segundo toque esquece.
 2. No iPhone ou Mac, na mesma rede: http://brain.local (ou o IP em Settings → About). Cole a chave do OpenRouter e Save.
 
 ## Exportar para o celular
