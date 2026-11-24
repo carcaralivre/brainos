@@ -297,7 +297,7 @@ static void drawLock() {
   char buf[32];
   snprintf(buf, sizeof(buf), "%d note%s", count, count == 1 ? "" : "s");
   textCentre(W / 2, H - 32, F_S12, buf);   // 32 px from the bottom
-  if (!count && !asleep) textCentre(W / 2, H - 76, F_S12, "Hold OK and speak");
+  if (!count && !notesCount(true) && !asleep) textCentre(W / 2, H - 76, F_S12, "Hold OK and speak");   // only a board that never had a note: an archive counts
   else if (asleep) iconPadlock(W / 2, H - 76);    // small, just above "N notes", only while the board sleeps
 }
 
