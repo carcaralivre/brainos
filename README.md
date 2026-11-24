@@ -34,7 +34,7 @@ To go back to Seeed's firmware, use the [Playground](https://www.seeedstudio.com
 
 1. **Wi-Fi.** On the board: Settings → Wi-Fi → *Add a network*. Pick the network, type its password, *Done*.
 2. **The page.** On the board: Settings → About → *Create page password*. On a phone or computer on the same network, open `http://brain.local` (or the address in Settings → About) within two minutes and make a password.
-3. **The key.** Make an account at [openrouter.ai](https://openrouter.ai/), add a little credit, create an API key and paste it under Settings on the page. *Save settings*.
+3. **The key.** Make an account at [openrouter.ai](https://openrouter.ai/), add a little credit, create an API key and paste it under Settings on the page and tap *Save key*.
 4. **The first note.** Hold OK, speak, let go. The note opens and its text arrives a few seconds later.
 
 Updates: Settings → About → *Check for update* on the board, or the About card on `brain.local`. If a new version doesn't start, the board goes back to the one before.
