@@ -29,11 +29,11 @@ extern const char *const VERSION;
 
 static const char *READER = "https://carcaralivre.github.io/brainos/reader/";
 
-// Undo: the notes as they were before the last delete, archive or export, for 6 s (a few more
+// Undo: the notes as they were before the last delete or archive, for 6 s (a few more
 // here, for a slow phone). A deleted recording's audio file stays until then. Undoing an archive
 // gives back only where the note was (and its pin), so a transcription that landed meanwhile stays.
 static std::vector<Note> undoNotes;
-static String undoWhat;        // "Deleted", "Archived", "Exported and archived"
+static String undoWhat;        // "Deleted", "Archived"
 static bool undoDelete;        // the notes are gone (put them back whole) or only archived
 static uint32_t undoAt;
 static const uint32_t UNDO_SHOW = 6000, UNDO_KEEP = 10000;
@@ -195,10 +195,7 @@ static void sendPage(const String &msg) {
   p += "</div>";
 
   p += "<div class='card'><h2>Export</h2><p class='mute'>On the board, Settings → Export shows the notes as QR codes. Open the QR reader (button at the top), tap Scan and point the camera at the board; when the reader has every part, tap Archive all on the board.</p>";
-  int fresh = 0;
-  for (int i : idx) if (notesExportable(all[i])) fresh++;
-  p += "<p class='mute'>Or export here: " + String(fresh) + " note" + (fresh == 1 ? "" : "s") + " as a Markdown file" + (cfg::flag("export.archive") ? ", which moves them to the Archive" : "") + ".</p><div class='row'>";
-  if (fresh) p += "<form method='post' action='/export' onsubmit='setTimeout(function(){location.href=\"/\"},1500)'><input class='o' type='submit' value='Export these notes (.md)'></form>";
+  p += "<p class='mute'>Or download every note here, archived ones included. Nothing changes on the board.</p><div class='row'>";
   p += "<a class='btn o' href='/notes.md'>All notes (.md)</a><a class='btn o' href='/notes.json'>JSON</a>" + (arch ? "<a class='btn o' href='/archive'>Archive · " + String(arch) + "</a>" : String()) + "</div></div>";
 
   std::vector<WifiCred> nets = cfg::wifiNetworks();
@@ -441,35 +438,6 @@ static String item(const Note &n, bool showArchived) {
   return s + "\n";
 }
 
-static void handleExport() {
-  auto &all = notesAll();
-  std::vector<int> idx;
-  for (int i : notesSorted(0, false)) if (notesExportable(all[i])) idx.push_back(i);
-  bool archive = cfg::flag("export.archive");
-  if (archive && !idx.empty()) undoStart("Exported and archived", false);
-  server.sendHeader("Content-Disposition", "attachment; filename=brainos-export.md");
-  Out p;
-  p.begin("text/markdown; charset=utf-8");
-  p += "# " + cfg::str("device.name") + ", exported " + when(time(nullptr)) + "\n\n";
-  for (int i : idx) {
-    Note &n = all[i];
-    p += item(n, false);
-    if (archive) { undoNotes.push_back(n); n.archived = true; n.pinned = false; }
-  }
-  p.end();
-  if (archive && !idx.empty()) {
-    if (!notesSave()) {
-      for (auto &was : undoNotes) {
-        Note *n = notesFind(was.id);
-        if (n) { n->archived = was.archived; n->pinned = was.pinned; }
-      }
-      undoNotes.clear(); undoWhat = "";
-      flash = NOTES_SAVE_FAIL;
-    }
-  }
-  uiNotesChanged();
-}
-
 static void handleUpdate() {
   bool install = server.arg("do") == "install" && updInfo().available;
   updateRequest(install);
@@ -563,7 +531,6 @@ void webBegin() {
   route("/wifi", HTTP_POST, handleWifi);
   route("/note", HTTP_POST, handleNote);
   route("/new", HTTP_POST, handleNew);
-  route("/export", HTTP_POST, handleExport);
   route("/update", HTTP_POST, handleUpdate);
   route("/undo", HTTP_POST, handleUndo);
   route("/archive", HTTP_GET, handleArchive);
