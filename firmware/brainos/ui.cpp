@@ -58,8 +58,8 @@ static void iconPin(int x, int y) {         // 16 x 16: a push pin
   canvas->fillRect(x + 2, y + 6, 12, 3, INK);
   canvas->fillRect(x + 7, y + 9, 2, 7, INK);
 }
-static void iconX(int x, int y) {           // 16 x 16: a cross, for Forget
-  for (int i = 0; i < 16; i++) { canvas->fillRect(x + i, y + i, 2, 2, INK); canvas->fillRect(x + 15 - i, y + i, 2, 2, INK); }
+static void iconX(int x, int y, uint16_t ink = INK) {   // 16 x 16: a cross, for Forget
+  for (int i = 0; i < 16; i++) { canvas->fillRect(x + i, y + i, 2, 2, ink); canvas->fillRect(x + 15 - i, y + i, 2, 2, ink); }
 }
 static void iconBubble(int x, int y) {      // 16 x 16: a speech bubble, for a question to the assistant
   canvas->drawRoundRect(x, y + 1, 16, 11, 4, INK);
@@ -315,11 +315,10 @@ static const int THIRD = (480 - 2 * UI_MARGIN - 2 * UI_GAP) / 3;
 static int noteButtonsY(const Note &n) { return n.archived ? FOOT_Y : FOOT_Y - UI_BTN - 12; }
 static void drawNote() {
   Note *n = notesFind(openId);
-  topBar("Note", true);
+  topBar(n && n->asked ? "Chat note" : "Note", true);   // the title says it is a chat: the bubble stays in the lists
   if (!n) { textCentre(W / 2, H / 2, F_S12, "Gone"); return; }
   String date = timeOf(n->created, true);
   text(24, BAR + 28, F_S9, date.c_str());
-  if (n->asked) iconBubble(W / 2 - 8, BAR + 15);   // a chat note: the bubble centred on the date line
   textRight(W - 24, BAR + 28, F_S9, costText(n->cost).c_str());
   int by = noteButtonsY(*n), top = BAR + 60;
   int per = max(1, (by - 16 - top) / 26 - (sayMsg.length() ? 1 : 0));
@@ -409,7 +408,6 @@ static std::vector<WifiCred> shownNets() {
 }
 
 static int wifiPage;
-static const int FORGET_W = 132;   // the armed "Yes, forget" button at the end of a row
 static void drawWifi() {
   topBar("Wi-Fi", true);
   std::vector<WifiCred> nets = shownNets();
@@ -421,13 +419,11 @@ static void drawWifi() {
     int y = LIST_TOP + k * rowH, mid = y + rowH / 2;
     bool on = netUp() && netName() == nets[i].ssid;
     text(24, mid + 8, F_S12, fitted(F_S12, nets[i].ssid, W - 48 - 170).c_str());
-    if ((int)i == forgetArmed) {
-      canvas->fillRoundRect(W - 24 - FORGET_W, mid - 20, FORGET_W, 40, 8, INK);
-      canvas->setTextColor(PAPER); textCentre(W - 24 - FORGET_W / 2, mid + 6, F_B9, "Yes, forget"); canvas->setTextColor(INK);
-    } else {
-      if (on) textRight(W - 24 - 16 - 14, mid + 6, F_S9, "connected");
-      iconX(W - 24 - 16, mid - 8);
-    }
+    if (on) textRight(W - 24 - 16 - 14, mid + 6, F_S9, "connected");
+    if ((int)i == forgetArmed) {   // armed: the X itself, white on black; a second tap on it forgets
+      canvas->fillRoundRect(W - 24 - 24, mid - 16, 32, 32, 6, INK);
+      iconX(W - 24 - 16, mid - 8, PAPER);
+    } else iconX(W - 24 - 16, mid - 8);
     canvas->drawFastHLine(24, y + rowH - 1, W - 48, INK);
   }
   if (nets.empty()) textCentre(W / 2, H / 2, F_S12, "No saved networks");
@@ -594,6 +590,13 @@ void uiOpenChat(Screen back) {
 
 void uiSay(const char *msg) { sayMsg = msg; uiRender(false); }
 void uiSleeping(bool on) { asleep = on; }
+// Every pass of the loop: a screen that shows the network follows it, and the Wi-Fi screen's notice goes after 5 s.
+void uiTick() {
+  static bool up; static String shown; static uint32_t shownAt;
+  if (netUp() != up) { up = netUp(); if (screen == SCREEN_ABOUT || screen == SCREEN_SETTINGS || screen == SCREEN_WIFI) uiRender(false); }
+  if (wifiMsg != shown) { shown = wifiMsg; shownAt = millis(); }
+  if (wifiMsg.length() && millis() - shownAt > 5000) { wifiMsg = shown = ""; if (screen == SCREEN_WIFI) uiRender(false); }
+}
 void uiMinute() { if (screen == SCREEN_LOCK && batteryLine() + dateLine() != lockDrawn) uiRender(false); }
 
 // The open note or the chat grew (a transcription, an answer, Tidy): show the page where it did.
@@ -751,7 +754,7 @@ void uiTap(int x, int y) {
       std::vector<WifiCred> nets = shownNets();
       int i = netRowAt(y, wifiPage);
       bool real = i >= 0 && i < (int)nets.size();
-      if (real && forgetArmed == i && x >= W - 24 - FORGET_W) {   // the second tap forgets
+      if (real && forgetArmed == i && x >= W - 24 - 44) {   // the second tap forgets
         String e; cfg::setWifi(cfg::wifiWithout(nets[i].ssid), e); forgetArmed = -1; wifiMsg = "Forgotten"; uiRender(false);
         break;
       }

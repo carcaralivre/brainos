@@ -19,6 +19,7 @@ String uiOpenNoteId();          // the note on SCREEN_NOTE
 void uiSay(const char *msg);    // a line above the buttons of the note or the chat, until the next press
 void uiNotice(const char *msg); // a recording that failed: the reason, big, for a moment
 void uiSleeping(bool on);       // the lock screen shows the padlock (drawn before deep sleep)
+void uiTick();                  // every loop: screens that show the network follow it; the Wi-Fi notice expires
 void uiMinute();                // once a minute: redraw the lock screen if the battery or the date changed
 void uiNotesChanged();
 void uiTextGrew(const String &noteId, int offset);   // the open note (or the chat, for "") grew at offset: show that page

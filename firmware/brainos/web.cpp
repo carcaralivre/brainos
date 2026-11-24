@@ -76,7 +76,7 @@ static const char CSS[] PROGMEM =
   "h2{font:500 11px/16px Geist,-apple-system,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--tertiary);margin:0 0 12px}"
   ".note{padding:12px 0;border-top:1px solid var(--border)}.note.first{border-top:0;padding-top:0}"
   ".note p{margin:0 0 6px;white-space:pre-wrap;font-size:14px;line-height:20px}.meta{font:11px/16px 'Geist Mono',ui-monospace,Menlo,monospace;color:var(--tertiary);margin:0 0 8px}"
-  ".row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}form{display:inline}form.b{display:block}.edit{margin-top:8px}[hidden]{display:none!important}"
+  ".row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}form{display:inline}.row form{display:flex;gap:8px;flex-wrap:wrap}form.b{display:block}.edit{margin-top:8px}[hidden]{display:none!important}"
   "button,input[type=submit],.btn{font:500 14px/20px Geist,-apple-system,sans-serif;padding:0 12px;height:36px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--fg);text-decoration:none;display:inline-flex;align-items:center;cursor:pointer;transition:background-color .1s,color .1s,border-color .1s}"
   "button:hover,.btn:hover{background:var(--accent)}.o,input.o{border-color:var(--border)}.p,input.p{background:var(--primary);color:#fff}.p:hover,input.p:hover{background:#1a1917}.d{color:var(--destructive)}.destructive{background:var(--destructive);color:#fff;border-color:var(--destructive)}.destructive:hover{background:var(--destructive)}"
   ".w{width:100%;justify-content:center}"

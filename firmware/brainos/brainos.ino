@@ -319,6 +319,7 @@ void loop() {
   if (redrawDue()) uiRender(false);
   serialPoll();
   netTick();
+  uiTick();
   sttTick();
   webTick();
   exportTick();
