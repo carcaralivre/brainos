@@ -4,6 +4,8 @@
 #include "web.h"
 #include <WebServer.h>
 #include <LittleFS.h>
+#include <esp_random.h>
+#include "mbedtls/sha256.h"
 #include "board.h"
 #include "cost.h"
 #include "config.h"
@@ -253,6 +255,76 @@ static void back(const char *where) {
   server.send(303, "text/plain", "");
 }
 
+// ---------------------------------------------------------------- the password
+// The first visit makes the page's password; after that a browser gives it once and carries a
+// cookie (kept across the board's sleeps). The cookie belongs to the board's own name, so a page
+// elsewhere pointed at the board comes without it. Forgotten: About on the board resets it.
+
+static String hex(const uint8_t *b, size_t n) { String s; char t[3]; for (size_t i = 0; i < n; i++) { snprintf(t, sizeof t, "%02x", b[i]); s += t; } return s; }
+static String randomHex(size_t bytes) { uint8_t b[32]; esp_fill_random(b, bytes); return hex(b, bytes); }
+static String hashOf(const String &salt, const String &pass) {
+  String in = salt + pass; uint8_t d[32];
+  mbedtls_sha256((const uint8_t *)in.c_str(), in.length(), d, 0);
+  return hex(d, 32);
+}
+bool webHasPassword() { return cfg::str("web.pass").length() > 0; }
+void webForgetPassword() { String e; cfg::setStr("web.pass", "", e); cfg::setStr("web.session", "", e); }
+static bool passwordIs(const String &pass) {
+  String kept = cfg::str("web.pass");
+  int cut = kept.indexOf('$');
+  return cut > 0 && hashOf(kept.substring(0, cut), pass) == kept.substring(cut + 1);
+}
+static bool signedIn() {
+  String want = cfg::str("web.session"), c = server.header("Cookie");
+  if (!want.length()) return false;
+  for (int at = 0; at >= 0 && at < (int)c.length();) {   // "a=1; s=<token>"
+    int end = c.indexOf(';', at);
+    String part = c.substring(at, end < 0 ? c.length() : end); part.trim();
+    if (part == "s=" + want) return true;
+    at = end < 0 ? -1 : end + 1;
+  }
+  return false;
+}
+static void signIn() { server.sendHeader("Set-Cookie", "s=" + cfg::str("web.session") + "; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax"); }
+
+static int wrongTries;
+static uint32_t lockedAt;   // five wrong passwords: a minute's wait
+static bool lockedOut() { return wrongTries >= 5 && millis() - lockedAt < 60000; }
+
+// The page before the password: make one (the first visit), or give it.
+static void gatePage() {
+  bool make = !webHasPassword();
+  String name = cfg::str("device.name"), msg = flash; flash = "";
+  String p = head(name) + "<header><h1>" + html(name) + "</h1></header>";
+  if (msg.length()) p += "<div class='msg'>" + html(msg) + "</div>";
+  if (make) p += "<div class='card'><h2>Create a password</h2><p class='mute'>This page shows your notes to anyone on the same Wi-Fi. Choose a password for it, 8 characters or more, one you use nowhere else. Forgotten? On the board: Settings, About, Reset page password.</p>"
+                 "<form class='b' method='post' action='/setup'><label for='p1'>Password</label><input type='password' id='p1' name='p1' minlength='8' maxlength='64' autocomplete='new-password' required>"
+                 "<label for='p2'>Again</label><input type='password' id='p2' name='p2' minlength='8' maxlength='64' autocomplete='new-password' required><p></p><input class='p' type='submit' value='Save password'></form></div>";
+  else p += "<div class='card'><h2>Password</h2><form class='b' method='post' action='/login'><label for='p'>This page's password (forgotten? On the board: Settings, About, Reset page password)</label>"
+            "<input type='password' id='p' name='p' maxlength='64' autocomplete='current-password' required autofocus><p></p><input class='p' type='submit' value='Open'></form></div>";
+  server.send(200, "text/html; charset=utf-8", p + "</div></body></html>");
+}
+
+static void handleSetup() {
+  String a = server.arg("p1"), err;
+  if (webHasPassword()) { back("/"); return; }   // made already: this form is no way around it
+  if (a != server.arg("p2")) flash = "The two passwords differ";
+  else if (a.length() < 8 || a.length() > 64) flash = "A password has 8 to 64 characters";
+  else {
+    String salt = randomHex(4);
+    if (cfg::setStr("web.session", randomHex(24), err) && cfg::setStr("web.pass", salt + "$" + hashOf(salt, a), err)) { signIn(); flash = "Password saved"; }
+    else flash = "Not saved: " + err;
+  }
+  back("/");
+}
+
+static void handleLogin() {
+  if (lockedOut()) flash = "Too many tries: wait a minute";
+  else if (passwordIs(server.arg("p"))) { wrongTries = 0; signIn(); }
+  else { if (wrongTries >= 5) wrongTries = 0; if (++wrongTries >= 5) lockedAt = millis(); flash = "Wrong password"; }
+  back("/");
+}
+
 static String plain(String e) {   // a setting's error in the form's words
   static const char *const NAMES[][2] = {{"stt.api_key", "The OpenRouter key"}, {"stt.model", "The transcription model"}, {"stt.prompt", "The transcription style"},
     {"ask.model", "The assistant model"}, {"ask.prompt", "The assistant instructions"}, {"device.name", "The device name"}, {"device.timezone", "The time zone"}, {"sleep.min", "The minutes before sleep"}};
@@ -426,29 +498,27 @@ static bool fromThisPage() {
   return true;   // no browser around it (a script on the network): nothing to check against
 }
 
-// The board answers to its own names only (brain.local, brain, its address): under any other
-// name the request comes from a page elsewhere that was pointed at the board to read it.
-static bool ourName() {
-  String h = server.hostHeader();
-  h.toLowerCase();
-  if (h.endsWith(":80")) h.remove(h.length() - 3);
-  if (h.endsWith(".")) h.remove(h.length() - 1);
-  return h == "brain.local" || h == "brain" || h == netAddress();
-}
-
-// Every request: the board stays awake while the page is in use (`counts`); a change must come from this page.
-static void route(const char *path, HTTPMethod method, void (*fn)(), bool counts = true) {
-  server.on(path, method, [method, fn, counts] {
-    if (!ourName()) { server.send(403, "text/plain", "Open http://brain.local"); return; }
+// Every request: the board stays awake while the page is in use (`counts`); a change must come
+// from this page; and nothing is shown or changed before the password.
+static void route(const char *path, HTTPMethod method, void (*fn)(), bool counts = true, bool open = false) {
+  server.on(path, method, [method, fn, counts, open] {
     if (counts) lastActivity = millis();
     if (method == HTTP_POST && !fromThisPage()) { server.send(403, "text/plain", "Only the page at brain.local can change the board"); return; }
+    if (!open && !signedIn()) {
+      if (method == HTTP_POST) back("/");
+      else if (counts) gatePage();
+      else server.send(401, "text/plain", "");
+      return;
+    }
     fn();
   });
 }
 
 void webBegin() {
-  const char *headers[] = {"Origin", "Referer"};
-  server.collectHeaders(headers, 2);
+  const char *headers[] = {"Origin", "Referer", "Cookie"};
+  server.collectHeaders(headers, 3);
+  route("/setup", HTTP_POST, handleSetup, true, true);
+  route("/login", HTTP_POST, handleLogin, true, true);
   route("/", HTTP_GET, handleRoot);
   route("/settings", HTTP_POST, handleSettings);
   route("/wifi", HTTP_POST, handleWifi);

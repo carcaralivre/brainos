@@ -30,6 +30,8 @@ static const CfgKey KEYS[] = {
   {"ask.prompt",        "ask_prompt",CFG_STR,   false, CHK_TEXT,  0,   500,   "Answer briefly, in the language of the question, in at most three sentences."},
   {"sleep.min",         "sleep_min3",CFG_INT,   false, CHK_TEXT,  1,   1440,  "3"},     // minutes on battery without a touch or a button before deep sleep (a new NVS key: the old 30 is left behind)
   {"export.archive",    "exp_arch",  CFG_BOOL,  false, CHK_TEXT,  0,   0,     "true"},
+  {"web.pass",          "web_pass",  CFG_STR,   true,  CHK_TOKEN, 0,   80,    ""},      // brain.local's password as salt$sha256, "" until one is made
+  {"web.session",       "web_sess",  CFG_STR,   true,  CHK_TOKEN, 0,   64,    ""},      // what a browser that gave the password carries from then on
 };
 static const size_t N = sizeof(KEYS) / sizeof(KEYS[0]);
 static const char *NS = "pcfg0";   // the namespace the earlier versions wrote: nothing to migrate

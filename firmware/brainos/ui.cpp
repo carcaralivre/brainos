@@ -17,6 +17,7 @@
 #include "screen.h"
 #include "stt.h"
 #include "touch.h"
+#include "web.h"
 extern const char *const VERSION;
 
 Screen screen = SCREEN_LOCK;
@@ -33,6 +34,7 @@ static bool deleteArmed;            // Delete on a note
 static bool deleteAllArmed;         // Delete all in the Archive
 static bool exportArmed;            // Archive all on the export screen
 static int forgetArmed = -1;        // the saved network whose X was tapped
+static bool resetArmed;             // Reset page password in About
 static Keyboard kb;
 static int kbPurpose;              // 1 edit the open note, 2 a Wi-Fi password, 3 a new note
 static Screen kbBack;
@@ -476,6 +478,7 @@ static void drawAbout() {
   for (auto &l : lines) { if (!l.length()) continue; auto w = wrapLines(F_S9, l, W - 48, 2); for (auto &t : w) { text(24, y, F_S9, t.c_str()); y += 24; } y += 6; }
   UpdInfo u = updInfo();
   if (u.status.length() && u.checkedMs) { auto w = wrapLines(F_S9, u.status, W - 48, 3); y += 10; for (auto &t : w) { text(24, y, F_S9, t.c_str()); y += 24; } }
+  if (webHasPassword()) uiButton(24, FOOT_Y - UI_BTN - 12, W - 48, UI_BTN, resetArmed ? "Yes, reset" : "Reset page password", resetArmed);   // brain.local asks for a new one at the next visit
   bool checking = u.state == UPD_CHECKING || updateQueued();
   if (u.state == UPD_INSTALLING || updateInstalling()) uiButton(24, FOOT_Y, W - 48, 52, "Installing, don't switch off", true);
   else if (u.available) uiFooter(checking ? "Checking…" : "Check again", false, ("Install " + u.latest).c_str(), true);
@@ -559,7 +562,7 @@ void uiRender(bool full) {
 
 void uiGo(Screen s) {
   if (s != screen) {
-    deleteArmed = deleteAllArmed = exportArmed = false; forgetArmed = -1; listeningDone = listeningFull = false; sayMsg = "";
+    deleteArmed = deleteAllArmed = exportArmed = resetArmed = false; forgetArmed = -1; listeningDone = listeningFull = false; sayMsg = "";
     if (s == SCREEN_NOTES || s == SCREEN_ARCHIVE) page = 0;
     if (s != SCREEN_WIFI) wifiMsg = "";
     if (screen == SCREEN_CHAT && s != SCREEN_LISTENING) chatClear();   // leaving the passing chat forgets it
@@ -622,8 +625,8 @@ static bool leftIcon(int x, int y) { return inBar(y) && x < 80; }
 
 // A tap while a destructive button is armed only disarms it, unless it is on that button.
 static bool disarm() {
-  if (!deleteArmed && !deleteAllArmed && !exportArmed && forgetArmed < 0) return false;
-  deleteArmed = deleteAllArmed = exportArmed = false; forgetArmed = -1;
+  if (!deleteArmed && !deleteAllArmed && !exportArmed && !resetArmed && forgetArmed < 0) return false;
+  deleteArmed = deleteAllArmed = exportArmed = resetArmed = false; forgetArmed = -1;
   uiRender(false);
   return true;
 }
@@ -754,6 +757,13 @@ void uiTap(int x, int y) {
     }
     case SCREEN_KEYBOARD: keyboardResult(keyboardTap(kb, x, y)); break;
     case SCREEN_ABOUT:
+      if (webHasPassword() && y >= FOOT_Y - UI_BTN - 12 && y < FOOT_Y - 12) {   // Reset page password: arms, then resets
+        if (!resetArmed) resetArmed = true;
+        else { webForgetPassword(); resetArmed = false; }
+        uiRender(false);
+        break;
+      }
+      if (disarm()) break;
       if (leftIcon(x, y)) uiGo(SCREEN_SETTINGS);
       else if (inFooter(y) && !updateInstalling()) {
         updateRequest(updInfo().available && uiFooterHit(x, y) == 1);
