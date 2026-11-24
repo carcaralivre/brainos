@@ -16,6 +16,8 @@ static std::vector<String, PsAlloc<String>> ids;
 static int part;
 static uint32_t shownAt;
 static String batch;
+static int loopsDone;
+static bool paused;
 
 int exportParts() { return parts.size(); }
 
@@ -48,7 +50,7 @@ static std::vector<String> pieces(const String &t, size_t room) {
 }
 
 bool exportStart() {
-  parts.clear(); ids.clear(); part = 0;
+  parts.clear(); ids.clear(); part = 0; loopsDone = 0; paused = false;
   char b[8]; snprintf(b, sizeof(b), "%04x", (unsigned)(esp_random() & 0xFFFF)); batch = b;
   auto &all = notesAll();
   std::vector<int> idx;
@@ -118,18 +120,34 @@ void exportDraw(bool armed) {
   textCentre(W / 2, qrY + qrPx + 50, F_B18, b);
   snprintf(b, sizeof(b), "%d note%s", (int)ids.size(), ids.size() == 1 ? "" : "s");
   textCentre(W / 2, qrY + qrPx + 86, F_S12, b);
-  textCentre(W / 2, UI_FOOT_Y - 20, F_S9, "Instructions at brain.local");
+  textCentre(W / 2, UI_FOOT_Y - 20, F_S9, paused ? "Tap the code to continue" : "Instructions at brain.local");
   bool archive = cfg::flag("export.archive");
   const char *label = !archive ? "Done" : armed ? "Yes, archive all" : "Archive all";
   uiButton(UI_MARGIN, UI_FOOT_Y, W - 2 * UI_MARGIN, UI_BTN, label, armed);
 }
 
 void exportTick() {
-  if (screen != SCREEN_EXPORT || parts.size() < 2) return;
+  if (paused || screen != SCREEN_EXPORT || parts.size() < 2) return;
   if (millis() - shownAt < INTERVAL_MS) return;
   shownAt = millis();
   part = (part + 1) % parts.size();
+  if (part == 0) {
+    loopsDone++;
+    if (loopsDone >= 2) {
+      paused = true;
+      screenGhostPause(false);
+      screenGhostReset();
+    }
+  }
   uiRender(false);
+}
+
+bool exportWaitingTap() { return paused; }
+void exportResume() {
+  paused = false;
+  loopsDone = 0;
+  shownAt = millis();
+  screenGhostPause(true);
 }
 
 void exportDone(bool keep) {
@@ -138,7 +156,13 @@ void exportDone(bool keep) {
       Note *n = notesFind(id);
       if (n) { n->archived = true; n->pinned = false; }
     }
-    if (!ids.empty()) notesSave();
+    if (!ids.empty() && !notesSave()) {
+      // disk still has them on the list; RAM was archived — leave RAM as the list too
+      for (auto &id : ids) {
+        Note *n = notesFind(id);
+        if (n) { n->archived = false; }
+      }
+    }
   }
-  parts.clear(); ids.clear(); part = 0;
+  parts.clear(); ids.clear(); part = 0; loopsDone = 0; paused = false;
 }

@@ -21,12 +21,13 @@ void chatRecorded(const String &path, uint16_t secs) {
 
 Note *chatSave() {
   if (chat.waiting() || chat.turns.empty()) return nullptr;
-  Note &n = notesAdd(chatJoin(chat.turns), "", 0);
-  n.asked = true;
-  n.cost = chat.cost;
-  notesSave();
+  Note *n = notesAdd(chatJoin(chat.turns), "", 0);
+  if (!n) return nullptr;
+  n->asked = true;
+  n->cost = chat.cost;
+  if (!notesSave()) return nullptr;
   chatClear();
-  return &n;
+  return n;
 }
 
 std::vector<String> chatTurnsOf(const String &text) {

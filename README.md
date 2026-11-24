@@ -33,7 +33,7 @@ To go back to Seeed's firmware, use the [Playground](https://www.seeedstudio.com
 ## First steps
 
 1. **Wi-Fi.** On the board: Settings → Wi-Fi → *Add a network*. Pick the network, type its password, *Done*.
-2. **The page.** On a phone or computer on the same network, open `http://brain.local` (or the address in Settings → About). The first visit asks you to make a password for the page.
+2. **The page.** On the board: Settings → About → *Create page password*. On a phone or computer on the same network, open `http://brain.local` (or the address in Settings → About) within two minutes and make a password.
 3. **The key.** Make an account at [openrouter.ai](https://openrouter.ai/), add a little credit, create an API key and paste it under Settings on the page. *Save settings*.
 4. **The first note.** Hold OK, speak, let go. The note opens and its text arrives a few seconds later.
 
@@ -57,7 +57,9 @@ firmware/build.sh build   # into ~/.cache/brainos-build
 firmware/build.sh         # build and flash over USB
 ```
 
-Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/tools/drive.py <port> shot:file.png` saves it as PNG and runs any other commands in order), `notes`, `note add <text>`, `wifi`, `wifi add <ssid> <password>`, `time YYYY-MM-DD HH:MM`, `tap x y`, `ok`, `move n`, `lock`, `sleep`, `stats`, `fs`, `sensors`, `nettest`, `wifi seen`, `wipe` (deletes every note).
+Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/tools/drive.py <port> shot:file.png` saves it as PNG and runs any other commands in order), `wifi`, `time YYYY-MM-DD HH:MM`, `tap x y`, `ok`, `move n`, `lock`, `sleep`, `stats`, `fs`, `sensors`, `nettest`, `wifi seen`. A `dev-…` build also has `notes`, `note add <text>`, `wifi add <ssid> <password>`, `wipe` (deletes every note).
+
+Host tests (no board): `firmware/test/run.sh`.
 
 `spike/sticky-stt/` is the on-chip speech-to-text experiment that decided against local transcription ([docs/stt-spike.md](docs/stt-spike.md)). It is not part of the firmware.
 

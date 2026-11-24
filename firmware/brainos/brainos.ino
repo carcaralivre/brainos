@@ -85,7 +85,7 @@ static void record(int how) {   // a RecKind (an int: the sketch's generated pro
     if (into) {
       int at = into->text.length() ? into->text.length() + 2 : 0;
       into->audio = path; into->secs = secs; into->modified = time(nullptr);
-      notesSave();
+      if (!notesSave()) { into->audio = ""; into->secs = 0; uiNotice(NOTES_SAVE_FAIL); LittleFS.remove(path); uiGo(before == SCREEN_EXPORT ? SCREEN_SETTINGS : before); return; }
       uiOpenNote(into->id, at);   // the page where the addition starts
       return;
     }
@@ -97,9 +97,10 @@ static void record(int how) {   // a RecKind (an int: the sketch's generated pro
     return;
   }
   chatClear();   // a new note leaves the passing chat behind
-  Note &n = notesAdd("", path, secs, id);   // the file is named after the id
-  if (kind == REC_CHAT_NOTE) { n.asked = true; notesSave(); }
-  uiOpenNote(n.id, 0);
+  Note *n = notesAdd("", path, secs, id);   // the file is named after the id
+  if (!n) { uiNotice(NOTES_SAVE_FAIL); LittleFS.remove(path); uiGo(before == SCREEN_EXPORT ? SCREEN_SETTINGS : before); return; }
+  if (kind == REC_CHAT_NOTE) { n->asked = true; if (!notesSave()) n->asked = false; }
+  uiOpenNote(n->id, 0);
 }
 
 // Settings -> Update: a check, or an install, run on the loop (Update writes flash: not a PSRAM-stack task).
@@ -154,7 +155,8 @@ static void netTest() {
     int code = http.GET();
     String body; if (code > 0) netReadBody(http, body, 4000);
     char err[80] = ""; tls.lastError(err, sizeof err);
-    Serial.printf("nettest: GET auth/key -> %d in %lu ms, %s %s\n", code, (unsigned long)(millis() - t), body.substring(0, 160).c_str(), err);
+    if (!strncmp(VERSION, "dev", 3)) Serial.printf("nettest: GET auth/key -> %d in %lu ms, %s %s\n", code, (unsigned long)(millis() - t), body.substring(0, 160).c_str(), err);
+    else Serial.printf("nettest: GET auth/key -> %d in %lu ms %s\n", code, (unsigned long)(millis() - t), err);
     http.end();
   }
 }
@@ -191,14 +193,14 @@ static void serialCommand(char *line) {
     rtcFromSystem();
     Serial.println("time: set (local)");
     uiRender(false);
-  } else if (!strncmp(line, "note add ", 9)) { notesAdd(line + 9, "", 0); uiRender(false); Serial.println("note: added"); }
-  else if (!strcmp(line, "notes")) { for (auto &n : notesAll()) Serial.printf("%s %lu %s%s%s %s\n", n.id.c_str(), (unsigned long)n.created, n.pinned ? "P" : "-", n.archived ? "A" : "-", n.audio.length() ? "W" : "-", n.audio.length() ? n.audio.c_str() : n.text.c_str()); }
-  else if (!strcmp(line, "wipe")) { for (auto &n : notesAll()) if (n.audio.length()) LittleFS.remove(n.audio); notesAll().clear(); notesSave(); uiRender(false); Serial.println("notes: wiped"); }
+  } else if (!strncmp(VERSION, "dev", 3) && !strncmp(line, "note add ", 9)) { notesAdd(line + 9, "", 0); uiRender(false); Serial.println("note: added"); }
+  else if (!strncmp(VERSION, "dev", 3) && !strcmp(line, "notes")) { for (auto &n : notesAll()) Serial.printf("%s %lu %s%s%s %s\n", n.id.c_str(), (unsigned long)n.created, n.pinned ? "P" : "-", n.archived ? "A" : "-", n.audio.length() ? "W" : "-", n.audio.length() ? n.audio.c_str() : n.text.c_str()); }
+  else if (!strncmp(VERSION, "dev", 3) && !strcmp(line, "wipe")) { for (auto &n : notesAll()) if (n.audio.length()) LittleFS.remove(n.audio); notesAll().clear(); notesSave(); uiRender(false); Serial.println("notes: wiped"); }
   else if (sscanf(line, "tap %d %d", &x, &y) == 2) uiTap(x, y);
   else if (!strcmp(line, "ok")) uiOk();
   else if (sscanf(line, "move %d", &x) == 1) uiMove(x);
   else if (!strcmp(line, "lock")) uiGo(SCREEN_LOCK);
-  else if (!strncmp(line, "wifi add ", 9)) {   // wifi add <ssid> <password>  (typed by the owner in the terminal)
+  else if (!strncmp(VERSION, "dev", 3) && !strncmp(line, "wifi add ", 9)) {   // wifi add <ssid> <password>  (typed by the owner in the terminal)
     char *sp = strchr(line + 9, ' ');
     if (!sp) { Serial.println("wifi add <ssid> <password>"); return; }
     *sp = 0;
@@ -245,7 +247,37 @@ void setup() {
   readSensors();
   rtcBegin();
   rtcToSystem();
-  if (!LittleFS.begin(true)) Serial.println("fs: FAILED");
+  if (!LittleFS.begin(false)) {
+    Serial.println("fs: mount failed, nothing formatted");
+    if (canvas) {
+      canvas->fillScreen(PAPER);
+      canvas->setTextColor(INK);
+      textCentre(W / 2, 160, F_B12, "Notes couldn't be read");
+      textCentre(W / 2, 220, F_S12, "Nothing was deleted.");
+      textCentre(W / 2, 320, F_S12, "OK: try again");
+      textCentre(W / 2, 370, F_S12, "Hold OK: erase all notes");
+      show(true);
+    }
+    uint32_t holdAt = 0;
+    bool holding = false;
+    for (;;) {
+      serialPoll();
+      if (okDown()) {
+        if (!holding) { holding = true; holdAt = millis(); }
+        else if (millis() - holdAt > 2000) {
+          if (LittleFS.begin(true)) { Serial.println("fs: formatted after a held OK"); break; }
+          holding = false;
+        }
+      } else {
+        if (holding && millis() - holdAt < 2000) {
+          holding = false;
+          if (LittleFS.begin(false)) break;
+        }
+        holding = false;
+      }
+      delay(10);
+    }
+  }
   notesBegin();
   esp_sleep_wakeup_cause_t why = esp_sleep_get_wakeup_cause();
   if (why == ESP_SLEEP_WAKEUP_TIMER) {   // midnight: the new date, and back to sleep (an early wake just sleeps on)
@@ -301,6 +333,8 @@ void loop() {
     sleepMin = cfg::num("sleep.min");
   }
   // On battery, asleep a few minutes after the last touch or button; a request in flight finishes first.
-  if (!now.usb && millis() - lastActivity > (uint32_t)sleepMin * 60000 && !sttRunning()) goToSleep();
+  uint32_t idle = (uint32_t)sleepMin * 60000UL;
+  if (screen == SCREEN_NOTE || screen == SCREEN_CHAT || screen == SCREEN_KEYBOARD) idle *= 3;
+  if (!now.usb && millis() - lastActivity > idle && !sttRunning()) goToSleep();
   delay(10);
 }

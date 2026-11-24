@@ -11,6 +11,7 @@
 #include "glyphs.h"
 #include "mbedtls/sha256.h"
 #include "net.h"
+#include "semver.h"
 
 static String fmt(const char *f, ...) {
   char b[200];
@@ -45,67 +46,6 @@ static size_t binSize;
 static const char *const NVS_NS = "brainos_ota";
 
 const char *updVersion() { return UPD_STR(STICKY_VERSION); }
-
-// A version: [v]MAJOR.MINOR.PATCH, optionally -PRERELEASE (letters, digits,
-// dots), and nothing else ("v1.2.3.4" is refused). `pre` points into `s` at
-// the pre-release ("" for none).
-static bool parseVersion(const char *s, long v[3], const char **pre = nullptr) {
-  if (!s) return false;
-  if (*s == 'v' || *s == 'V') s++;
-  for (int i = 0; i < 3; i++) {
-    if (!isdigit((unsigned char)*s)) return false;
-    char *end;
-    v[i] = strtol(s, &end, 10);
-    s = end;
-    if (i < 2 && *s++ != '.') return false;
-  }
-  const char *p = "";
-  if (*s == '-') {
-    p = ++s;
-    if (!*s) return false;
-    for (; *s; s++)
-      if (!isalnum((unsigned char)*s) && *s != '.') return false;
-    if (p[0] == '.' || s[-1] == '.' || strstr(p, "..")) return false;
-  } else if (*s) {
-    return false;
-  }
-  if (pre) *pre = p;
-  return true;
-}
-
-// Semver precedence of two pre-releases (both non-empty): dot-separated
-// fields; numbers compare as numbers and sort before words; more fields win.
-static int comparePre(const char *a, const char *b) {
-  while (*a && *b) {
-    size_t la = strcspn(a, "."), lb = strcspn(b, ".");
-    bool na = la && strspn(a, "0123456789") >= la, nb = lb && strspn(b, "0123456789") >= lb;
-    int c;
-    if (na && nb) c = strtol(a, nullptr, 10) < strtol(b, nullptr, 10) ? -1 : strtol(a, nullptr, 10) > strtol(b, nullptr, 10);
-    else if (na != nb) c = na ? -1 : 1;
-    else {
-      c = strncmp(a, b, la < lb ? la : lb);
-      if (!c && la != lb) c = la < lb ? -1 : 1;
-    }
-    if (c) return c < 0 ? -1 : 1;
-    a += la, b += lb;
-    if (*a == '.') a++;
-    if (*b == '.') b++;
-  }
-  return *a ? 1 : *b ? -1 : 0;
-}
-
-// <0, 0, >0 as a is older than, the same as, newer than b. A pre-release
-// is older than its release (v1.0.0-rc1 < v1.0.0). Unparsable sorts lowest.
-static int updCompare(const char *a, const char *b) {
-  long x[3], y[3];
-  const char *pa, *pb;
-  bool okA = parseVersion(a, x, &pa), okB = parseVersion(b, y, &pb);
-  if (!okA || !okB) return okA - okB;
-  for (int i = 0; i < 3; i++)
-    if (x[i] != y[i]) return x[i] < y[i] ? -1 : 1;
-  if (!*pa || !*pb) return *pa ? -1 : *pb ? 1 : 0;
-  return comparePre(pa, pb);
-}
 
 static bool updIsDev() {
   long v[3];
@@ -511,7 +451,7 @@ bool updInstall() {
     if (code != 200 || !isHex64(hex)) return installFailed("Couldn't get the release's checksum", why.length() ? why : "not a SHA-256: " + text.substring(0, 20));
     expect = hex;
   }
-  if (expect.length() && !isHex64(expect)) return installFailed("The release's checksum isn't valid", expect.substring(0, 20));
+  if (!isHex64(expect)) return installFailed("The release has no checksum", expect.substring(0, 20));
 
   if (!Update.begin(binSize, U_FLASH)) return installFailed("Couldn't start writing the update", Update.errorString());
   FlashSink sink(binSize);
@@ -526,11 +466,10 @@ bool updInstall() {
   mbedtls_sha256_finish(&sink.sha, digest);
   char hex[65];
   for (int i = 0; i < 32; i++) sprintf(hex + i * 2, "%02x", digest[i]);
-  if (expect.length() && !expect.equalsIgnoreCase(hex)) {
+  if (!expect.equalsIgnoreCase(hex)) {
     Update.abort();
     return installFailed("The download's checksum doesn't match", String("got ") + hex + ", want " + expect);
   }
-  if (!expect.length()) Serial.println("update: the release has no checksum: the size and the image's own check only");
   if (!Update.end()) return installFailed("The new firmware didn't check out", Update.errorString());  // the image's own hash too
 
   Serial.printf("update: %s written and checked (sha256 %s); restarting into it\n", tag.c_str(), hex);

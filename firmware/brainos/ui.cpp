@@ -35,6 +35,7 @@ static bool deleteAllArmed;         // Delete all in the Archive
 static bool exportArmed;            // Archive all on the export screen
 static int forgetArmed = -1;        // the saved network whose X was tapped
 static bool resetArmed;             // Reset page password in About
+static bool installArmed;           // Install on About
 static Keyboard kb;
 static int kbPurpose;              // 1 edit the open note, 2 a Wi-Fi password, 3 a new note
 static Screen kbBack;
@@ -296,7 +297,8 @@ static void drawLock() {
   char buf[32];
   snprintf(buf, sizeof(buf), "%d note%s", count, count == 1 ? "" : "s");
   textCentre(W / 2, H - 32, F_S12, buf);   // 32 px from the bottom
-  if (asleep) iconPadlock(W / 2, H - 76);    // small, just above "N notes", only while the board sleeps
+  if (!count && !asleep) textCentre(W / 2, H - 76, F_S12, "Hold OK and speak");
+  else if (asleep) iconPadlock(W / 2, H - 76);    // small, just above "N notes", only while the board sleeps
 }
 
 static void drawNotes() {
@@ -478,10 +480,11 @@ static void drawAbout() {
   for (auto &l : lines) { if (!l.length()) continue; auto w = wrapLines(F_S9, l, W - 48, 2); for (auto &t : w) { text(24, y, F_S9, t.c_str()); y += 24; } y += 6; }
   UpdInfo u = updInfo();
   if (u.status.length() && u.checkedMs) { auto w = wrapLines(F_S9, u.status, W - 48, 3); y += 10; for (auto &t : w) { text(24, y, F_S9, t.c_str()); y += 24; } }
-  if (webHasPassword()) uiButton(24, FOOT_Y - UI_BTN - 12, W - 48, UI_BTN, resetArmed ? "Yes, reset" : "Reset page password", resetArmed);   // brain.local asks for a new one at the next visit
+  if (!webHasPassword()) uiButton(24, FOOT_Y - UI_BTN - 12, W - 48, UI_BTN, webSetupOpen() ? "Password window open" : "Create page password", webSetupOpen());
+  else uiButton(24, FOOT_Y - UI_BTN - 12, W - 48, UI_BTN, resetArmed ? "Yes, reset" : "Reset page password", resetArmed);
   bool checking = u.state == UPD_CHECKING || updateQueued();
   if (u.state == UPD_INSTALLING || updateInstalling()) uiButton(24, FOOT_Y, W - 48, 52, "Installing, don't switch off", true);
-  else if (u.available) uiFooter(checking ? "Checking…" : "Check again", false, ("Install " + u.latest).c_str(), true);
+  else if (u.available) uiFooter(checking ? "Checking…" : "Check again", false, installArmed ? "Yes, install" : ("Install " + u.latest).c_str(), true);
   else uiButton(24, FOOT_Y, W - 48, 52, checking ? "Checking…" : "Check for update", false);
 }
 
@@ -562,7 +565,7 @@ void uiRender(bool full) {
 
 void uiGo(Screen s) {
   if (s != screen) {
-    deleteArmed = deleteAllArmed = exportArmed = resetArmed = false; forgetArmed = -1; listeningDone = listeningFull = false; sayMsg = "";
+    deleteArmed = deleteAllArmed = exportArmed = resetArmed = installArmed = false; forgetArmed = -1; listeningDone = listeningFull = false; sayMsg = "";
     if (s == SCREEN_NOTES || s == SCREEN_ARCHIVE) page = 0;
     if (s != SCREEN_WIFI) wifiMsg = "";
     if (screen == SCREEN_CHAT && s != SCREEN_LISTENING) chatClear();   // leaving the passing chat forgets it
@@ -602,20 +605,19 @@ void uiTextGrew(const String &noteId, int offset) {
 // ---------------------------------------------------------------- input
 
 // The edit of the open note, kept: an empty text leaves the note as it was (Delete is the way to remove it).
-static void keepEdit() {
+static bool keepEdit() {
   String t = kb.text; t.trim();
   Note *n = notesFind(openId);
-  if (!n || !t.length() || kb.text == n->text) return;
-  n->text = kb.text; n->orig = ""; n->modified = time(nullptr);   // edited: the text before Tidy no longer undoes it
-  notesSave();
+  if (!n || !t.length() || kb.text == n->text) return true;
+  return notesApply(openId, "edit", kb.text);
 }
 
 static void keyboardResult(KbResult r) {
   if (r == KB_CHANGED) redrawSoon();
   else if (r == KB_CANCEL) uiGo(kbBack);
   else if (r == KB_DONE) {
-    if (kbPurpose == 1) { keepEdit(); uiGo(SCREEN_NOTE); }
-    else if (kbPurpose == 3) { String t = kb.text; t.trim(); if (t.length()) { Note &n = notesAdd(t, "", 0); uiOpenNote(n.id, 0); } else uiGo(SCREEN_NOTES); }
+    if (kbPurpose == 1) { bool ok = keepEdit(); uiGo(SCREEN_NOTE); if (!ok) uiSay(NOTES_SAVE_FAIL); }
+    else if (kbPurpose == 3) { String t = kb.text; t.trim(); if (t.length()) { Note *n = notesAdd(t, "", 0); if (n) uiOpenNote(n->id, 0); else { uiNotice(NOTES_SAVE_FAIL); uiGo(SCREEN_NOTES); } } else uiGo(SCREEN_NOTES); }
     else if (kbPurpose == 2) { if (kb.text.length() < 8) { kb.note = "A password has at least 8 characters"; uiRender(false); } else joinNetwork(joinSsid, kb.text, SCREEN_KEYBOARD); }
   }
 }
@@ -625,8 +627,8 @@ static bool leftIcon(int x, int y) { return inBar(y) && x < 80; }
 
 // A tap while a destructive button is armed only disarms it, unless it is on that button.
 static bool disarm() {
-  if (!deleteArmed && !deleteAllArmed && !exportArmed && !resetArmed && forgetArmed < 0) return false;
-  deleteArmed = deleteAllArmed = exportArmed = resetArmed = false; forgetArmed = -1;
+  if (!deleteArmed && !deleteAllArmed && !exportArmed && !resetArmed && !installArmed && forgetArmed < 0) return false;
+  deleteArmed = deleteAllArmed = exportArmed = resetArmed = installArmed = false; forgetArmed = -1;
   uiRender(false);
   return true;
 }
@@ -669,34 +671,52 @@ void uiTap(int x, int y) {
       bool row1 = !n->archived && y >= by && y < by + UI_BTN, foot = inFooter(y), right = x >= W / 2;
       if (foot && right) {   // Delete: arms, then deletes
         if (!deleteArmed) { deleteArmed = true; uiRender(false); }
-        else { notesRemove(openId); deleteArmed = false; uiGo(home); }
+        else {
+          bool ok = notesApply(openId, "delete");
+          deleteArmed = false;
+          if (!ok) uiSay(NOTES_SAVE_FAIL);
+          else uiGo(home);
+        }
         break;
       }
       if (disarm()) break;
       int third = (x - 24) / (THIRD + UI_GAP);
-      if (row1 && third == 0) { notesPin(*n); uiRender(false); }
+      if (row1 && third == 0) { if (!notesApply(openId, "pin")) uiSay(NOTES_SAVE_FAIL); uiRender(false); }
       else if (row1 && third == 1 && !n->busy()) { keyboardBegin(kb, n->text, "Edit note", max<int>(KB_NOTE_MAX, utf8Count(n->text.c_str()) + 200)); kbPurpose = 1; kbBack = SCREEN_NOTE; uiGo(SCREEN_KEYBOARD); }
-      else if (row1 && third == 2 && (n->asking || n->tidying)) {   // Cancel: the note is free again; an answer on its way is dropped
-        if (n->asking) n->text += "\n\n(no answer: cancelled)";   // in the answer's place, so the turns stay in order
-        n->asking = n->tidying = false; n->modified = time(nullptr); notesSave(); uiRender(false);
+      else if (row1 && third == 2 && (n->asking || n->tidying)) {
+        if (!notesApply(openId, "cancel")) uiSay(NOTES_SAVE_FAIL);
+        uiRender(false);
       }
-      else if (row1 && third == 2 && !n->busy() && n->orig.length()) { n->text = n->orig; n->orig = ""; n->modified = time(nullptr); notesSave(); notePage = 0; uiRender(false); }
-      else if (row1 && third == 2 && !n->busy() && n->text.length() && !n->asked) { n->tidying = true; notesSave(); uiRender(false); }
-      else if (foot && n->archived) { n->archived = false; n->modified = time(nullptr); notesSave(); uiGo(SCREEN_ARCHIVE); }
-      else if (foot && !n->busy()) { n->archived = true; n->pinned = false; n->modified = time(nullptr); notesSave(); uiGo(SCREEN_NOTES); }
+      else if (row1 && third == 2 && !n->busy() && n->orig.length()) {
+        if (!notesApply(openId, "original")) uiSay(NOTES_SAVE_FAIL);
+        else notePage = 0;
+        uiRender(false);
+      }
+      else if (row1 && third == 2 && !n->busy() && n->text.length() && !n->asked) {
+        if (!notesApply(openId, "tidy")) uiSay(NOTES_SAVE_FAIL);
+        uiRender(false);
+      }
+      else if (foot && n->archived) {
+        if (!notesApply(openId, "restore")) uiSay(NOTES_SAVE_FAIL);
+        else uiGo(SCREEN_ARCHIVE);
+      }
+      else if (foot && !n->busy()) {
+        if (!notesApply(openId, "archive")) uiSay(NOTES_SAVE_FAIL);
+        else uiGo(SCREEN_NOTES);
+      }
       else if (hadMsg) uiRender(false);
       break;
     }
     case SCREEN_CHAT:
       if (leftIcon(x, y)) { uiGo(chatBack); break; }
-      if (inFooter(y)) { Note *n = chatSave(); if (n) { String id = n->id; uiOpenNote(id, 0); } break; }
+      if (inFooter(y)) { Note *n = chatSave(); if (n) { String id = n->id; uiOpenNote(id, 0); } else if (!chat.waiting() && !chat.turns.empty()) uiSay(NOTES_SAVE_FAIL); break; }
       if (hadMsg) uiRender(false);
       break;
     case SCREEN_ARCHIVE: {
       if (inFooter(y) && notesCount(true)) {
         if (!deleteAllArmed) { deleteAllArmed = true; uiRender(false); }
         else {
-          notesRemoveArchived();
+          if (!notesRemoveArchived()) uiSay(NOTES_SAVE_FAIL);
           deleteAllArmed = false;
           uiRender(false);
         }
@@ -716,6 +736,7 @@ void uiTap(int x, int y) {
       }
       if (disarm()) break;
       if (leftIcon(x, y)) { exportDone(true); screenGhostReset(); uiGo(SCREEN_SETTINGS); }
+      else if (exportWaitingTap()) { exportResume(); uiRender(false); }
       break;
     case SCREEN_SETTINGS: {
       if (leftIcon(x, y)) { uiGo(SCREEN_NOTES); break; }
@@ -757,16 +778,19 @@ void uiTap(int x, int y) {
     }
     case SCREEN_KEYBOARD: keyboardResult(keyboardTap(kb, x, y)); break;
     case SCREEN_ABOUT:
-      if (webHasPassword() && y >= FOOT_Y - UI_BTN - 12 && y < FOOT_Y - 12) {   // Reset page password: arms, then resets
-        if (!resetArmed) resetArmed = true;
-        else { webForgetPassword(); resetArmed = false; }
+      if (y >= FOOT_Y - UI_BTN - 12 && y < FOOT_Y - 12) {
+        if (!webHasPassword()) webArmSetup();
+        else if (!resetArmed) resetArmed = true;
+        else { webForgetPassword(); resetArmed = false; }   // clears the password and opens the two-minute window
         uiRender(false);
         break;
       }
       if (disarm()) break;
       if (leftIcon(x, y)) uiGo(SCREEN_SETTINGS);
       else if (inFooter(y) && !updateInstalling()) {
-        updateRequest(updInfo().available && uiFooterHit(x, y) == 1);
+        bool install = updInfo().available && uiFooterHit(x, y) == 1;
+        if (install && !installArmed) { installArmed = true; uiRender(false); }
+        else { installArmed = false; updateRequest(install); }
       }
       break;
     default: break;
@@ -816,7 +840,7 @@ void uiLock() {
   if (screen == SCREEN_KEYBOARD) {   // locked or asleep under the keyboard: what was typed is kept (a Wi-Fi password is not)
     String t = kb.text; t.trim();
     if (kbPurpose == 1) keepEdit();
-    else if (kbPurpose == 3 && t.length()) notesAdd(t, "", 0);
+    else if (kbPurpose == 3 && t.length() && !notesAdd(t, "", 0)) uiNotice(NOTES_SAVE_FAIL);
   }
   lockFrom = screen == SCREEN_CHAT ? chatBack : backFrom(screen);
   if (lockFrom == SCREEN_LOCK) lockFrom = SCREEN_NOTES;

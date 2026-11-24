@@ -10,6 +10,9 @@
 #include "chat.h"
 #include "cost.h"
 #include "ui.h"
+#include <cstring>
+extern const char *const VERSION;
+static bool isDevBuild() { return !strncmp(VERSION, "dev", 3); }
 
 // A job: the WAV bytes (read by the loop; this task never touches flash), or a chat request
 // body built on the loop, and the answer.
@@ -43,8 +46,14 @@ String sttProblem() {
   if (failures && waitWhy.length()) return waitWhy + ", trying again";
   return "";
 }
+static String inflightOf(const String &path) { return path + ".i"; }
+
 void sttRetry() {   // the settings changed: what was refused gets another go
-  for (auto &n : notesAll()) n.stuck = "";
+  for (auto &n : notesAll()) {
+    n.stuck = "";
+    if (n.audio.length()) LittleFS.remove(inflightOf(n.audio));
+  }
+  if (chat.audio.length()) LittleFS.remove(inflightOf(chat.audio));
   failures = 0; waitWhy = "";
 }
 // A refusal that may pass (the key, the credit, a limit, a timeout) waits and tries again; any other 4xx is about the request itself.
@@ -93,7 +102,7 @@ static void chatTask() {
     Serial.printf("ask: unreadable answer (%u bytes): %s\n", (unsigned)reply.length(), logSafe(reply, 120).c_str());
   } else {
     job.text.trim();
-    Serial.printf("ask: answered in %lu ms, %lu micro-dollars: %s\n", (unsigned long)(millis() - start), (unsigned long)job.cost, logSafe(job.text, 80).c_str());
+    Serial.printf("ask: answered in %lu ms, %lu micro-dollars, %u characters\n", (unsigned long)(millis() - start), (unsigned long)job.cost, (unsigned)job.text.length());
     if (!job.text.length()) { job.error = "The assistant sent an empty answer"; job.fatal = true; }
     else if (job.cut && job.kind == JOB_TIDY) { job.error = "The note is too long to tidy"; job.fatal = true; }   // a cut text never replaces the note
     else if (job.cut) job.text += " (cut short)";
@@ -123,7 +132,8 @@ static void sttTask() {
   } else {
     job.text.trim();
     if (!job.cost) job.cost = costTranscription(model, job.secs);   // what OpenRouter charged, or the price list
-    Serial.printf("stt: heard \"%s\" in %lu ms\n", job.text.c_str(), (unsigned long)(millis() - start));
+    if (isDevBuild()) Serial.printf("stt: heard \"%s\" in %lu ms\n", job.text.c_str(), (unsigned long)(millis() - start));
+    else Serial.printf("stt: heard %u characters in %lu ms\n", (unsigned)job.text.length(), (unsigned long)(millis() - start));
     if (!job.text.length()) { job.error = "Nothing was heard"; job.fatal = true; }
   }
 }
@@ -173,20 +183,22 @@ static void apply() {
 
   Note *n = notesFind(job.noteId);
   if (!n) return;
+  Note before = *n;
   n->cost += job.cost;
   int at = -1;   // where the note grew
   String said;   // a line for the open note
+  String wav = n->audio;
   if (job.kind == JOB_STT && (ok || job.fatal)) {
-    LittleFS.remove(n->audio);
-    n->audio = ""; n->secs = 0; n->stuck = "";
     String heard = ok ? job.text : "(not transcribed: " + job.error + ")";
     at = n->text.length() ? n->text.length() + 2 : 0;
     n->text = n->text.length() ? n->text + "\n\n" + heard : heard;
-    n->orig = "";   // the text moved on: the one before Tidy no longer undoes it
-    n->asking = ok && n->asked;   // a question: the assistant's turn next
+    n->orig = "";
+    n->asking = ok && n->asked;
+    n->audio = ""; n->secs = 0; n->stuck = "";
   } else if (job.kind == JOB_STT) {
-    if (job.skip) n->stuck = job.error;   // the recording stays
-  } else if (job.kind == JOB_ASK && n->asking && (ok || job.fatal)) {   // not asking any more: cancelled meanwhile
+    if (job.skip) n->stuck = job.error;
+    else LittleFS.remove(inflightOf(wav));   // a failure that may pass: send again
+  } else if (job.kind == JOB_ASK && n->asking && (ok || job.fatal)) {
     n->asking = false;
     at = n->text.length() + 2;
     n->text += "\n\n" + (ok ? chatAnswerText(job.text) : "(no answer: " + job.error + ")");
@@ -196,9 +208,19 @@ static void apply() {
     else said = "Tidy failed: " + job.error;
   }
   n->modified = time(nullptr);
-  notesSave();
+  if (!notesSave()) {
+    *n = before;
+    said = NOTES_SAVE_FAIL;
+    if (wav.length() && job.kind == JOB_STT && (ok || job.fatal)) LittleFS.remove(inflightOf(wav));
+  } else if (job.kind == JOB_STT && (ok || job.fatal) && wav.length()) {
+    LittleFS.remove(wav);
+    LittleFS.remove(inflightOf(wav));
+  } else if (job.kind == JOB_STT && job.skip && wav.length()) {
+    LittleFS.remove(inflightOf(wav));
+  }
   if (at >= 0) uiTextGrew(n->id, at);
   if (said.length() && screen == SCREEN_NOTE && uiOpenNoteId() == n->id) { uiSay(said.c_str()); return; }
+  if (said == NOTES_SAVE_FAIL) uiSay(NOTES_SAVE_FAIL);
   uiNotesChanged();
 }
 
@@ -211,6 +233,8 @@ static bool sendAudio(const String &path, int secs, const String &noteId) {
   size_t got = f.read(wav, len);
   f.close();
   if (got != len) { free(wav); return true; }
+  File mark = LittleFS.open(inflightOf(path), "w");
+  if (mark) mark.close();
   job.kind = JOB_STT; job.noteId = noteId; job.chatGen = chat.gen; job.wav = wav; job.len = len; job.secs = secs; job.req = "";
   job.state = 1;
   Serial.printf("stt: sending %s (%u bytes)\n", path.c_str(), (unsigned)len);
@@ -238,6 +262,11 @@ void sttTick() {
   for (auto &q : notesAll()) if (q.asking && !q.audio.length()) { sendChat(JOB_ASK, q.id, askBodyFor(chatTurnsOf(q.text), false)); return; }
   for (auto &q : notesAll()) if (q.tidying && !q.audio.length() && !q.asking) { sendChat(JOB_TIDY, q.id, tidyBodyFor(q.text)); return; }
   for (auto &n : notesAll()) if (n.audio.length() && !n.stuck.length()) {
+    if (LittleFS.exists(inflightOf(n.audio))) {
+      n.stuck = "Already sent once: Save settings to send again";
+      notesSave(); uiNotesChanged();
+      return;
+    }
     if (!sendAudio(n.audio, n.secs, n.id)) {
       Serial.printf("stt: %s is missing, dropping it\n", n.audio.c_str());
       n.audio = ""; n.text = n.text.length() ? n.text + "\n\n(recording lost)" : "(recording lost)"; notesSave(); uiNotesChanged();

@@ -22,15 +22,18 @@ struct Note {
 
 void notesBegin();                                   // mount and load
 bool notesSave();                                    // write the whole file atomically; false (the old file kept) when the flash is full
+static const char *const NOTES_SAVE_FAIL = "Not saved: storage full";
 std::vector<Note, PsAlloc<Note>> &notesAll();
 Note *notesFind(const String &id);
-void notesPin(Note &n);   // pins (or unpins); with three already pinned, the oldest pin is let go
-Note &notesAdd(const String &text, const String &audio, uint16_t secs, const String &id = "");   // a recording is named after its id
-void notesRemove(const String &id, bool keepAudio = false);   // and its audio file, unless it is kept (brain.local's Undo)
+bool notesPin(Note &n);   // pins (or unpins); with three already pinned, the oldest pin is let go; false if not saved
+Note *notesAdd(const String &text, const String &audio, uint16_t secs, const String &id = "");   // nullptr if not saved; a recording is named after its id
+bool notesRemove(const String &id, bool keepAudio = false);   // and its audio file, unless it is kept (brain.local's Undo)
+// pin, archive, restore, delete, tidy, cancel, original, edit. false only when not saved.
+bool notesApply(const String &id, const char *op, const String &text = "", bool keepAudio = false);
 int notesCount(bool archived);                       // how many in the list (or in the archive)
 int notesPending();                                  // notes waiting for the cloud
 uint32_t notesVersion();                             // goes up with every save: the page asks for it to know when to reload
-void notesRemoveArchived();                          // the whole archive, in one save
+bool notesRemoveArchived();                          // the whole archive, in one save
 inline bool notesExportable(const Note &n) { return n.text.length() && !n.busy(); }   // a note still waiting for the cloud stays for the next export
 String notesNewId();
 std::vector<int> notesSorted(int which, bool newestFirst);   // indexes into notesAll(): which 0 the list, 1 the archive, 2 all

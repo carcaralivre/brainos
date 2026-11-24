@@ -6,3 +6,5 @@ void exportDraw(bool armed);     // the current part (call inside a render); arm
 void exportTick();               // from loop(): the next part every couple of seconds
 void exportDone(bool keep);      // the button: archive them (when set); keep = leave without archiving
 int exportParts();
+bool exportWaitingTap();         // paused after two loops; a tap continues
+void exportResume();

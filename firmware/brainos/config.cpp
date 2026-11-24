@@ -22,6 +22,7 @@ static const CfgKey KEYS[] = {
   {"wifi.networks",     "wifi",      CFG_WIFI,  true,  CHK_TEXT,  0,   0,     ""},
   {"device.name",       "dev_name",  CFG_STR,   false, CHK_TEXT,  0,   40,    "Brain's Brain"},
   {"device.timezone",   "dev_tz",    CFG_STR,   false, CHK_TZ,    3,   63,    "<-03>3"},
+  {"device.tz_manual",  "tz_manual", CFG_BOOL,  false, CHK_TEXT,  0,   0,     "false"},   // a time zone chosen at brain.local: locate() leaves it
   {"stt.api_key",       "stt_key",   CFG_STR,   true,  CHK_TOKEN, 20,  256,   ""},
   {"stt.model",         "stt_model", CFG_STR,   false, CHK_TOKEN, 1,   64,    "openai/gpt-4o-mini-transcribe"},
   {"stt.language",      "stt_lang",  CFG_STR,   false, CHK_TOKEN, 0,   5,     ""},

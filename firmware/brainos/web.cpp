@@ -18,6 +18,7 @@
 #include "ota.h"
 #include "provjson.h"
 #include "stt.h"
+#include "semver.h"
 #include <vector>
 
 static WebServer server(80);
@@ -173,7 +174,7 @@ static void sendPage(const String &msg) {
   p.begin("text/html; charset=utf-8");
   p += head(name);
   int pend = notesPending(), arch = notesCount(true);
-  p += "<header><h1>" + html(name) + "</h1><a class='btn o' href='" + String(READER) + "'>QR reader</a></header><div class='chips'>";
+  p += "<header><h1>" + html(name) + "</h1><div class='row'><a class='btn o' href='" + String(READER) + "'>QR reader</a><form method='post' action='/logout'><button class='o' type='submit'>Log out</button></form></div></header><div class='chips'>";
   p += "<span class='chip'>Battery " + String(now.percent) + "%" + (now.usb ? ", charging" : "") + "</span>";
   p += "<span class='chip'>" + String(netUp() ? html(netName()) : "No Wi-Fi") + "</span>";
   p += sttConfigured() ? "<span class='chip'>OpenRouter key set</span>" : "<span class='chip warn'>No OpenRouter key</span>";
@@ -211,6 +212,17 @@ static void sendPage(const String &msg) {
 
   p += "<div class='card'><h2>Settings</h2><form class='b' method='post' action='/settings'><input type='hidden' name='boxes' value='1'>";
   p += "<label for='key'>OpenRouter API key</label><div class='row' style='margin-bottom:6px'>" + String(sttConfigured() ? "<span class='mute' style='margin:0'>Set. Paste a new one below to replace it</span>" : "<span class='mute' style='margin:0;color:var(--destructive)'>Not set. Recordings wait until a key is set</span>") + "</div><input type='password' id='key' name='key' placeholder='sk-or-…' autocomplete='off'>";
+  String lang = cfg::str("stt.language");
+  p += "<label for='lang'>Transcription language</label><select id='lang' name='lang'>";
+  p += option("", "Let the model choose", lang);
+  p += option("pt", "Portuguese", lang);
+  p += option("en", "English", lang);
+  p += option("es", "Spanish", lang);
+  p += option("fr", "French", lang);
+  p += option("de", "German", lang);
+  p += option("it", "Italian", lang);
+  if (lang.length() && lang != "pt" && lang != "en" && lang != "es" && lang != "fr" && lang != "de" && lang != "it") p += option(lang, lang, lang);
+  p += "</select>";
   String model = cfg::str("stt.model");
   p += "<label for='model'>Transcription model</label><select id='model' name='model'>";
   bool known = false;
@@ -271,11 +283,15 @@ static String hashOf(const String &salt, const String &pass) {
   return hex(d, 32);
 }
 bool webHasPassword() { return cfg::str("web.pass").length() > 0; }
-void webForgetPassword() { String e; cfg::setStr("web.pass", "", e); cfg::setStr("web.session", "", e); }
+static uint32_t setupArmedAt;
+static const uint32_t SETUP_MS = 120000;
+bool webSetupOpen() { return setupArmedAt && millis() - setupArmedAt < SETUP_MS; }
+void webArmSetup() { setupArmedAt = millis(); }
+void webForgetPassword() { String e; cfg::setStr("web.pass", "", e); cfg::setStr("web.session", "", e); webArmSetup(); }
 static bool passwordIs(const String &pass) {
   String kept = cfg::str("web.pass");
-  int cut = kept.indexOf('$');
-  return cut > 0 && hashOf(kept.substring(0, cut), pass) == kept.substring(cut + 1);
+  int cut = 0;
+  return webPassSplit(kept.c_str(), &cut) && hashOf(kept.substring(0, cut), pass) == kept.substring(cut + 1);
 }
 static bool signedIn() {
   String want = cfg::str("web.session"), c = server.header("Cookie");
@@ -288,7 +304,8 @@ static bool signedIn() {
   }
   return false;
 }
-static void signIn() { server.sendHeader("Set-Cookie", "s=" + cfg::str("web.session") + "; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax"); }
+static void signIn() { server.sendHeader("Set-Cookie", "s=" + cfg::str("web.session") + "; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax"); }
+static void signOutCookie() { server.sendHeader("Set-Cookie", "s=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"); }
 
 static int wrongTries;
 static uint32_t lockedAt;   // five wrong passwords: a minute's wait
@@ -300,7 +317,8 @@ static void gatePage() {
   String name = cfg::str("device.name"), msg = flash; flash = "";
   String p = head(name) + "<header><h1>" + html(name) + "</h1></header>";
   if (msg.length()) p += "<div class='msg'>" + html(msg) + "</div>";
-  if (make) p += "<div class='card'><h2>Create a password</h2><p class='mute'>This page shows your notes to anyone on the same Wi-Fi. Choose a password for it, 8 characters or more, one you use nowhere else. Forgotten? On the board: Settings, About, Reset page password.</p>"
+  if (make && !webSetupOpen()) p += "<div class='card'><h2>Create a password</h2><p class='mute'>This page stays closed until you ask on the board: Settings, About, Create page password. You then have two minutes to choose a password here, 8 characters or more, one you use nowhere else.</p></div>";
+  else if (make) p += "<div class='card'><h2>Create a password</h2><p class='mute'>This page shows your notes to anyone on the same Wi-Fi. Choose a password for it, 8 characters or more, one you use nowhere else. The board opened this window for two minutes.</p>"
                  "<form class='b' method='post' action='/setup'><label for='p1'>Password</label><input type='password' id='p1' name='p1' minlength='8' maxlength='64' autocomplete='new-password' required>"
                  "<label for='p2'>Again</label><input type='password' id='p2' name='p2' minlength='8' maxlength='64' autocomplete='new-password' required><p></p><input class='p' type='submit' value='Save password'></form></div>";
   else p += "<div class='card'><h2>Password</h2><form class='b' method='post' action='/login'><label for='p'>This page's password (forgotten? On the board: Settings, About, Reset page password)</label>"
@@ -311,11 +329,12 @@ static void gatePage() {
 static void handleSetup() {
   String a = server.arg("p1"), err;
   if (webHasPassword()) { back("/"); return; }   // made already: this form is no way around it
+  if (!webSetupOpen()) { flash = "On the board: Settings, About, Create page password"; back("/"); return; }
   if (a != server.arg("p2")) flash = "The two passwords differ";
   else if (a.length() < 8 || a.length() > 64) flash = "A password has 8 to 64 characters";
   else {
     String salt = randomHex(4);
-    if (cfg::setStr("web.session", randomHex(24), err) && cfg::setStr("web.pass", salt + "$" + hashOf(salt, a), err)) { signIn(); flash = "Password saved"; }
+    if (cfg::setStr("web.session", randomHex(24), err) && cfg::setStr("web.pass", salt + "$" + hashOf(salt, a), err)) { setupArmedAt = 0; signIn(); flash = "Password saved"; }
     else flash = "Not saved: " + err;
   }
   back("/");
@@ -328,8 +347,16 @@ static void handleLogin() {
   back("/");
 }
 
+static void handleLogout() {
+  String err;
+  cfg::setStr("web.session", randomHex(24), err);
+  signOutCookie();
+  flash = "Logged out";
+  back("/");
+}
+
 static String plain(String e) {   // a setting's error in the form's words
-  static const char *const NAMES[][2] = {{"stt.api_key", "The OpenRouter key"}, {"stt.model", "The transcription model"}, {"stt.prompt", "The transcription style"},
+  static const char *const NAMES[][2] = {{"stt.api_key", "The OpenRouter key"}, {"stt.model", "The transcription model"}, {"stt.language", "The transcription language"}, {"stt.prompt", "The transcription style"},
     {"ask.model", "The assistant model"}, {"ask.prompt", "The assistant instructions"}, {"device.name", "The device name"}, {"device.timezone", "The time zone"}, {"sleep.min", "The minutes before sleep"}};
   for (auto &n : NAMES) e.replace(n[0], n[1]);
   e.replace(" bytes", " characters");
@@ -341,12 +368,16 @@ static void handleSettings() {
   String err, key = server.arg("key");
   key.trim();   // a pasted key often brings a space or a line break
   if (key.length()) cfg::setStr("stt.api_key", key, err);
+  if (!err.length() && server.hasArg("lang")) cfg::setStr("stt.language", server.arg("lang"), err);
   if (!err.length() && server.hasArg("model")) cfg::setStr("stt.model", server.arg("model"), err);
   if (!err.length() && server.hasArg("prompt")) { String t = server.arg("prompt"); t.replace("\r", ""); t.replace("\n", " "); t.trim(); cfg::setStr("stt.prompt", t, err); }
   if (!err.length() && server.hasArg("askmodel")) cfg::setStr("ask.model", server.arg("askmodel"), err);
   if (!err.length() && server.hasArg("askprompt")) { String t = server.arg("askprompt"); t.replace("\r", ""); t.replace("\n", " "); t.trim(); cfg::setStr("ask.prompt", t, err); }
   if (!err.length() && server.hasArg("name")) cfg::setStr("device.name", server.arg("name"), err);
-  if (!err.length() && server.hasArg("tz") && cfg::setStr("device.timezone", server.arg("tz"), err)) { setenv("TZ", server.arg("tz").c_str(), 1); tzset(); }
+  if (!err.length() && server.hasArg("tz") && cfg::setStr("device.timezone", server.arg("tz"), err)) {
+    setenv("TZ", server.arg("tz").c_str(), 1); tzset();
+    cfg::setFlag("device.tz_manual", true, err);
+  }
   if (!err.length() && server.arg("sleep").length()) cfg::setNum("sleep.min", server.arg("sleep").toInt(), err);
   if (!err.length() && server.hasArg("boxes")) cfg::setFlag("export.archive", server.hasArg("archive"), err);
   sttRetry();   // a new key or model: what was refused goes out again
@@ -377,20 +408,15 @@ static void handleNote() {
   Note *n = notesFind(server.arg("id"));
   String d = server.arg("do");
   if (n) {
-    if (d == "delete") { undoStart("Deleted", true); undoNotes.push_back(*n); notesRemove(n->id, true); }
-    else if (d == "pin" && !n->archived) notesPin(*n);
-    else if (d == "archive" && !n->busy()) { undoStart("Archived", false); undoNotes.push_back(*n); n->archived = true; n->pinned = false; notesSave(); }
-    else if (d == "restore") { n->archived = false; notesSave(); }
-    else if (d == "tidy" && !n->archived && !n->busy() && n->text.length() && !n->asked) { n->tidying = true; notesSave(); }
-    else if (d == "cancel" && (n->asking || n->tidying)) {   // an answer on its way is dropped
-      if (n->asking) n->text += "\n\n(no answer: cancelled)";
-      n->asking = n->tidying = false; n->modified = time(nullptr); notesSave();
-    }
-    else if (d == "original" && !n->busy() && n->orig.length()) { n->text = n->orig; n->orig = ""; n->modified = time(nullptr); notesSave(); }
-    else if (d == "edit" && !n->archived && !n->busy()) {
+    if (d == "edit") {
       String t = server.arg("text"); t.trim();
       if (tooLong(t)) { flash = TOO_LONG; back("/"); return; }
-      if (t.length() && t != n->text) { n->text = t; n->orig = ""; n->modified = time(nullptr); notesSave(); }   // edited: the text before Tidy no longer undoes it
+    }
+    if (d == "delete") { undoStart("Deleted", true); undoNotes.push_back(*n); }
+    else if (d == "archive" && !n->busy()) { undoStart("Archived", false); undoNotes.push_back(*n); }
+    if (!notesApply(n->id, d.c_str(), server.arg("text"), d == "delete")) {
+      if (d == "delete" || d == "archive") { undoNotes.clear(); undoWhat = ""; }
+      flash = NOTES_SAVE_FAIL;
     }
   }
   uiNotesChanged();
@@ -400,7 +426,7 @@ static void handleNote() {
 static void handleNew() {
   String t = server.arg("text"); t.trim();
   if (tooLong(t)) { flash = TOO_LONG; back("/"); return; }
-  if (t.length()) notesAdd(t, "", 0);
+  if (t.length() && !notesAdd(t, "", 0)) flash = NOTES_SAVE_FAIL;
   uiNotesChanged();
   back("/");
 }
@@ -431,7 +457,16 @@ static void handleExport() {
     if (archive) { undoNotes.push_back(n); n.archived = true; n.pinned = false; }
   }
   p.end();
-  if (archive && !idx.empty()) notesSave();
+  if (archive && !idx.empty()) {
+    if (!notesSave()) {
+      for (auto &was : undoNotes) {
+        Note *n = notesFind(was.id);
+        if (n) { n->archived = was.archived; n->pinned = was.pinned; }
+      }
+      undoNotes.clear(); undoWhat = "";
+      flash = NOTES_SAVE_FAIL;
+    }
+  }
   uiNotesChanged();
 }
 
@@ -485,8 +520,8 @@ static void handleUndo() {
       if (!n) { if (undoDelete) notesAll().push_back(was); }   // a deleted note comes back whole
       else { n->archived = was.archived; n->pinned = was.pinned; }   // an archived one only goes back to the list
     }
-    notesSave();
-    undoNotes.clear(); undoWhat = "";
+    if (!notesSave()) flash = NOTES_SAVE_FAIL;
+    else { undoNotes.clear(); undoWhat = ""; }
     uiNotesChanged();
   }
   back(server.arg("back") == "/archive" ? "/archive" : "/");
@@ -522,6 +557,7 @@ void webBegin() {
   server.collectHeaders(headers, 3);
   route("/setup", HTTP_POST, handleSetup, true, true);
   route("/login", HTTP_POST, handleLogin, true, true);
+  route("/logout", HTTP_POST, handleLogout);
   route("/", HTTP_GET, handleRoot);
   route("/settings", HTTP_POST, handleSettings);
   route("/wifi", HTTP_POST, handleWifi);

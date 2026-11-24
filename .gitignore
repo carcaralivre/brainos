@@ -1,4 +1,5 @@
 firmware/brainos/build/
+firmware/test/test_host
 spike/sticky-stt/build_*/
 spike/sticky-stt/images_*/
 spike/sticky-stt/sdkconfig_*

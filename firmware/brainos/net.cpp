@@ -76,14 +76,8 @@ static void locate() {
   if (a % 60) snprintf(tz, sizeof(tz), "<%c%02ld%02ld>%s%ld:%02ld", mins < 0 ? '-' : '+', a / 60, a % 60, west, a / 60, a % 60);
   else snprintf(tz, sizeof(tz), "<%c%02ld>%s%ld", mins < 0 ? '-' : '+', a / 60, west, a / 60);
   String err;
-  if (cfg::str("device.timezone") != tz && cfg::setStr("device.timezone", tz, err)) { setenv("TZ", tz, 1); tzset(); }
-  if (!cfg::str("stt.language").length() && country.length()) {
-    const char *lang = country == "BR" || country == "PT" || country == "AO" || country == "MZ" ? "pt"
-                     : country == "ES" || country == "MX" || country == "AR" || country == "CO" || country == "CL" || country == "PE" || country == "UY" ? "es"
-                     : country == "FR" || country == "BE" ? "fr" : country == "DE" || country == "AT" || country == "CH" ? "de" : country == "IT" ? "it" : "en";
-    cfg::setStr("stt.language", lang, err);
-  }
-  Serial.printf("locate: %s, UTC offset %ld min, tz %s, language %s\n", country.c_str(), mins, tz, cfg::str("stt.language").c_str());
+  if (!cfg::flag("device.tz_manual") && cfg::str("device.timezone") != tz && cfg::setStr("device.timezone", tz, err)) { setenv("TZ", tz, 1); tzset(); }
+  Serial.printf("locate: %s, UTC offset %ld min, tz %s\n", country.c_str(), mins, tz);
 }
 
 static void joined() {

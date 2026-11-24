@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include <esp_random.h>
 #include <algorithm>
+#include <cstring>
 #include "provjson.h"
 #include "stt.h"
 
@@ -14,8 +15,11 @@ std::vector<Note, PsAlloc<Note>> &notesAll() { return items; }
 
 String notesNewId() {
   char b[9];
-  uint32_t r = esp_random();
-  snprintf(b, sizeof(b), "%08lx", (unsigned long)(r ^ (uint32_t)time(nullptr) << 8));
+  for (int n = 0; n < 8; n++) {
+    uint32_t r = esp_random();
+    snprintf(b, sizeof(b), "%08lx", (unsigned long)(r ^ (uint32_t)time(nullptr) << 8 ^ (uint32_t)n));
+    if (!notesFind(b)) return String(b);
+  }
   return String(b);
 }
 
@@ -62,12 +66,17 @@ static void sweepQueue() {
   for (File f = d.openNextFile(); f; f = d.openNextFile()) {
     String name = f.name();
     String path = "/queue/" + name.substring(name.lastIndexOf('/') + 1);
+    if (path.endsWith(".i")) continue;   // sidecar of a recording that was sent
     bool used = false;
     for (auto &n : items) if (n.audio == path) used = true;
     if (!used) stray.push_back(path);
   }
   d.close();
-  for (auto &p : stray) { LittleFS.remove(p); Serial.printf("notes: %s belonged to no note, removed\n", p.c_str()); }
+  for (auto &p : stray) {
+    LittleFS.remove(p);
+    LittleFS.remove(p + ".i");
+    Serial.printf("notes: %s belonged to no note, removed\n", p.c_str());
+  }
 }
 
 void notesBegin() {
@@ -107,8 +116,8 @@ bool notesSave() {
   return true;
 }
 
-void notesPin(Note &n) {
-  if (n.pinned) { n.pinned = false; n.modified = time(nullptr); notesSave(); return; }
+bool notesPin(Note &n) {
+  if (n.pinned) { n.pinned = false; n.modified = time(nullptr); return notesSave(); }
   for (;;) {
     int count = 0, oldest = -1;
     for (size_t i = 0; i < items.size(); i++) if (items[i].pinned) { count++; if (oldest < 0 || items[i].modified < items[oldest].modified) oldest = i; }
@@ -117,7 +126,7 @@ void notesPin(Note &n) {
   }
   n.pinned = true;
   n.modified = time(nullptr);
-  notesSave();
+  return notesSave();
 }
 
 Note *notesFind(const String &id) {
@@ -125,7 +134,7 @@ Note *notesFind(const String &id) {
   return nullptr;
 }
 
-Note &notesAdd(const String &text, const String &audio, uint16_t secs, const String &id) {
+Note *notesAdd(const String &text, const String &audio, uint16_t secs, const String &id) {
   Note n;
   n.id = id.length() ? id : notesNewId();
   n.text = text;
@@ -133,27 +142,72 @@ Note &notesAdd(const String &text, const String &audio, uint16_t secs, const Str
   n.secs = secs;
   n.created = n.modified = (uint32_t)time(nullptr);
   items.push_back(n);
-  notesSave();
-  return items.back();
+  if (!notesSave()) {
+    items.pop_back();
+    return nullptr;
+  }
+  return &items.back();
 }
 
-void notesRemove(const String &id, bool keepAudio) {
+bool notesRemove(const String &id, bool keepAudio) {
   for (size_t i = 0; i < items.size(); i++)
     if (items[i].id == id) {
-      if (items[i].audio.length() && !keepAudio) LittleFS.remove(items[i].audio);
+      Note kept = items[i];
       items.erase(items.begin() + i);
-      notesSave();
-      return;
+      if (!notesSave()) { items.insert(items.begin() + i, kept); return false; }
+      if (kept.audio.length() && !keepAudio) { LittleFS.remove(kept.audio); LittleFS.remove(kept.audio + ".i"); }
+      return true;
     }
+  return false;
 }
 
-void notesRemoveArchived() {
-  for (size_t i = items.size(); i-- > 0;)
-    if (items[i].archived) {
-      if (items[i].audio.length()) LittleFS.remove(items[i].audio);
-      items.erase(items.begin() + i);
-    }
-  notesSave();
+bool notesRemoveArchived() {
+  std::vector<String> audio;
+  std::vector<Note, PsAlloc<Note>> keep;
+  for (auto &n : items) {
+    if (n.archived) { if (n.audio.length()) audio.push_back(n.audio); }
+    else keep.push_back(n);
+  }
+  auto was = items;
+  items = keep;
+  if (!notesSave()) { items = was; return false; }
+  for (auto &p : audio) { LittleFS.remove(p); LittleFS.remove(p + ".i"); }
+  return true;
+}
+
+bool notesApply(const String &id, const char *op, const String &text, bool keepAudio) {
+  Note *n = notesFind(id);
+  if (!n || !op) return false;
+  if (!strcmp(op, "pin")) { if (n->archived) return true; return notesPin(*n); }
+  if (!strcmp(op, "archive")) {
+    if (n->busy() || n->archived) return true;
+    n->archived = true; n->pinned = false; n->modified = time(nullptr); return notesSave();
+  }
+  if (!strcmp(op, "restore")) {
+    if (!n->archived) return true;
+    n->archived = false; n->modified = time(nullptr); return notesSave();
+  }
+  if (!strcmp(op, "delete")) return notesRemove(id, keepAudio);
+  if (!strcmp(op, "tidy")) {
+    if (n->archived || n->busy() || !n->text.length() || n->asked) return true;
+    n->tidying = true; return notesSave();
+  }
+  if (!strcmp(op, "cancel")) {
+    if (!(n->asking || n->tidying)) return true;
+    if (n->asking) n->text += "\n\n(no answer: cancelled)";
+    n->asking = n->tidying = false; n->modified = time(nullptr); return notesSave();
+  }
+  if (!strcmp(op, "original")) {
+    if (n->busy() || !n->orig.length()) return true;
+    n->text = n->orig; n->orig = ""; n->modified = time(nullptr); return notesSave();
+  }
+  if (!strcmp(op, "edit")) {
+    if (n->archived || n->busy()) return true;
+    String t = text; t.trim();
+    if (!t.length() || t == n->text) return true;
+    n->text = t; n->orig = ""; n->modified = time(nullptr); return notesSave();
+  }
+  return true;
 }
 
 int notesCount(bool archived) {
