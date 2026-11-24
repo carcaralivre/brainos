@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <LittleFS.h>
+#include <esp_partition.h>
 #include <WiFiClientSecure.h>
 #include <time.h>
 #include "board.h"
@@ -231,6 +232,24 @@ static void serialPoll() {
 
 // ---------------------------------------------------------------- setup and loop
 
+// A board fresh from the installer has an empty notes partition (all 0xFF): that is formatted
+// without asking. Anything else that fails to mount may hold notes, so the screen asks first.
+static bool fsNeverMade() {
+  const esp_partition_t *p = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "spiffs");
+  if (!p) return false;
+  static uint8_t b[256];
+  for (size_t off = 0; off < 8192; off += sizeof b) {   // LittleFS's two superblocks
+    if (esp_partition_read(p, off, b, sizeof b) != ESP_OK) return false;
+    for (uint8_t c : b) if (c != 0xFF) return false;
+  }
+  return true;
+}
+static bool fsFirstStart() {
+  if (!fsNeverMade()) return false;
+  Serial.println("fs: a new board: making the empty notebook");
+  return LittleFS.begin(true);
+}
+
 void setup() {
   boardBegin();
   Serial.begin(115200);
@@ -247,7 +266,7 @@ void setup() {
   readSensors();
   rtcBegin();
   rtcToSystem();
-  if (!LittleFS.begin(false)) {
+  if (!LittleFS.begin(false) && !fsFirstStart()) {
     Serial.println("fs: mount failed, nothing formatted");
     if (canvas) {
       canvas->fillScreen(PAPER);
