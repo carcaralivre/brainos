@@ -28,6 +28,26 @@ esptool --chip esp32s3 --baud 115200 write-flash 0x0 brainos-full.bin
 
 115200 baud only: the board's USB chip drops faster transfers.
 
+To go back to Seeed's firmware, use the [Playground](https://www.seeedstudio.com/sticky/playground/official-firmware/) in Chrome with the board on USB.
+
+## First steps
+
+1. **Wi-Fi.** On the board: Settings → Wi-Fi → *Add a network*. Pick the network, type its password, *Done*.
+2. **The page.** On a phone or computer on the same network, open `http://brain.local` (or the address in Settings → About). The first visit asks you to make a password for the page.
+3. **The key.** Make an account at [openrouter.ai](https://openrouter.ai/), add a little credit, create an API key and paste it under Settings on the page. *Save settings*.
+4. **The first note.** Hold OK, speak, let go. The note opens and its text arrives a few seconds later.
+
+Updates: Settings → About → *Check for update* on the board, or the About card on `brain.local`. If a new version doesn't start, the board goes back to the one before.
+
+A fuller guide in Portuguese: [docs/guia.md](docs/guia.md).
+
+## Privacy and costs
+
+- **What leaves the board.** Each recording goes to [OpenRouter](https://openrouter.ai/) to be turned into text, with the model you chose. A question, a chat or *Tidy* sends the text involved (for the passing Chat, your notes) to the assistant model. There is no BrainOS server or account.
+- **The key is yours.** It is stored on the board, never shown again on the page, and never in this repository or in the firmware files.
+- **What it costs.** You pay OpenRouter directly, at its prices. A short voice note is typically a fraction of a US cent; every note shows what it cost, and the totals are on the board and on the page.
+- **Where the notes live.** On the board only. `brain.local` works only inside your network and behind the password you made. The only other calls the board makes: the time from an internet clock, ip-api.com once per network to find the time zone (it sees your address, nothing from the board), and GitHub for the latest release when you ask for an update.
+
 ## Build
 
 arduino-cli, ESP32 core 3.3.11, Adafruit GFX 1.12.6 and BusIO 1.17.4 (see `.github/workflows/build.yml`). Then:

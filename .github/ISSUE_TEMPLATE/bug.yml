@@ -1,96 +1,47 @@
 name: Something isn't working
-description: A bug on the board, in the setup app or on the website.
+description: A bug on the board, on brain.local, on the Install page or in the QR reader.
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time. A bug we can make happen on our own board is a bug we can fix,
-        so the steps to reproduce it are the most important part of this form.
+        Thanks for taking the time. The steps to make it happen are the most important part.
 
-        Please don't paste WiFi passwords, API keys or tokens: the setup app never shows them,
-        and logs from the board don't print them.
-  - type: checkboxes
-    id: searched
-    attributes:
-      label: Before you start
-      options:
-        - label: I searched the open and closed issues and this isn't one of them
-          required: true
-        - label: I'm on the latest release, or I say below which version I'm on and why
-          required: true
+        Please don't paste Wi-Fi passwords, your OpenRouter key or the text of private notes.
   - type: dropdown
     id: where
     attributes:
       label: Where
-      options: [On the board, Setup app, Website, Building or flashing]
+      options: [On the board, brain.local, Install page, QR reader, Building or flashing]
     validations:
       required: true
   - type: textarea
     id: what
     attributes:
-      label: What happened
-      placeholder: "In Calendar, swiping up on the last page goes back to the first one."
-    validations:
-      required: true
-  - type: textarea
-    id: expected
-    attributes:
-      label: What you expected
-      placeholder: "It stays on the last page."
+      label: What happened, and what you expected
+      placeholder: "I held OK and spoke; the note stayed on 'waiting for Wi-Fi' although About shows the network connected."
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
       label: Steps to reproduce
-      description: |
-        Numbered steps from a known start (say "after a restart", or which app was open), with
-        the taps, swipes or settings that matter. If it needs particular data (a book, a calendar
-        link, a recipe), say what kind, or attach a small file that shows it. The fewer steps, the better.
       placeholder: |
-        1. Restart the board, open Calendar (week view)
-        2. Swipe up four times to the last page
-        3. Swipe up once more
-        4. The first page shows again
-    validations:
-      required: true
-  - type: dropdown
-    id: often
-    attributes:
-      label: How often does it happen?
-      options:
-        - Every time I follow the steps
-        - Sometimes (say roughly how often in the steps)
-        - Once, and I couldn't make it happen again
+        1. Wake the board with OK
+        2. Hold OK, speak for 5 seconds, release
+        3. ...
     validations:
       required: true
   - type: input
     id: version
     attributes:
-      label: Firmware version
-      description: Settings → About this device → Firmware (or the commit you built from).
-      placeholder: v1.7.0
+      label: Version
+      description: On the board, Settings → About (or the last line at the top of brain.local).
+      placeholder: v0.7.6
     validations:
       required: true
-  - type: dropdown
-    id: orientation
-    attributes:
-      label: Held
-      options: [Portrait, Landscape, Both, Doesn't matter]
-  - type: input
-    id: setup
-    attributes:
-      label: Board and setup (optional)
-      description: Anything unusual, e.g. the language, a microSD card in, voice through your own server, flashed from source.
   - type: textarea
     id: log
     attributes:
-      label: Serial log (optional, very helpful)
-      description: 115200 baud. Paste the lines from the step before the problem to just after it.
-      render: text
-  - type: textarea
-    id: shot
-    attributes:
-      label: Photo or screenshot (optional)
-      description: Drag an image here. The serial command `shot` (or `firmware/tools/board.py shot out.png`) gives the screen exactly as drawn; run `demo on` first to keep your own data out of it.
+      label: Serial log or photo (optional)
+      description: 115200 baud, the lines around the problem. A photo of the screen helps too.

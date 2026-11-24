@@ -22,7 +22,7 @@ Goal: pick the on-chip engine for BrainOS voice notes. Candidates: babytalk (tla
 - Device not connected yet; babytalk needs the board for any measurement.
 
 ### 2026-11-18: note-style phrases, synthetic voice (macOS `say`, Samantha), host engine
-Eight short "fridge note" phrases (3-5 s). Not Eduardo's voice; only a vocabulary sanity check.
+Eight short "fridge note" phrases (3-5 s). Not the owner's voice; only a vocabulary sanity check.
 
 | Model | Right | Typical misses |
 |---|---|---|
@@ -41,4 +41,4 @@ Flashed the unmodified upstream build (bootloader + partitions + boot_app0 + app
 First Oído run on the board: model loaded (5.84 MB weights, 5.15 MB placed in PSRAM, streaming), but the `lm` partition at 0x1210000 read back the model's own header: `esp_partition_mmap` on this ESP32-S3 aliases physical flash addresses modulo 16 MB. Every memory-mapped partition (app slots, STT model, LM) must live in the first 16 MB; the upper 16 MB can hold LittleFS and other partitions that are read, not mapped. Spike layout is now app 2 MB @0x10000, lm 2 MB @0x210000, model 12.4 MB @0x410000. After load: 74 KB internal RAM and 1.97 MB PSRAM free.
 
 ### 2026-11-19: result and decision
-Eduardo read the ten phrases on the board (Oído v2b + LM, streaming mode): **WER 42.5 %** (37/87), RTF 0.65. The same recordings on the Mac: v2b 27.6 %, v2a 24.1 %, nemo4 18.4 %, nemo8 19.5 %. Recordings are noisy (SNR 12-16 dB) and the voice is non-native. Conclusion: even the best local model is at one word in five wrong, so **local STT is dropped**. BrainOS transcribes in the cloud (OpenRouter, Whisper) in Portuguese or English, queues audio when offline. The spike code stays in `spike/sticky-stt/` as a record; it is not part of the product. Lasting lesson: memory-mapped partitions must stay below 16 MB on this board.
+The owner read the ten phrases on the board (Oído v2b + LM, streaming mode): **WER 42.5 %** (37/87), RTF 0.65. The same recordings on the Mac: v2b 27.6 %, v2a 24.1 %, nemo4 18.4 %, nemo8 19.5 %. Recordings are noisy (SNR 12-16 dB) and the voice is non-native. Conclusion: even the best local model is at one word in five wrong, so **local STT is dropped**. BrainOS transcribes in the cloud (OpenRouter, Whisper) in Portuguese or English, queues audio when offline. The spike code stays in `spike/sticky-stt/` as a record; it is not part of the product. Lasting lesson: memory-mapped partitions must stay below 16 MB on this board.

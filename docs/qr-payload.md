@@ -10,7 +10,7 @@ Byte mode, UTF-8, at most about 950 bytes, QR version up to 25, error correction
 code holds one JSON object:
 
 ```json
-{"v":1,"b":"a1b2","i":2,"n":3,"dev":"Brain do Eduardo",
+{"v":1,"b":"a1b2","i":2,"n":3,"dev":"Brain's Brain",
  "notes":[{"id":"8f3c2a1e","c":1763500000,"p":0,"t":"Buy milk and coffee filters"}],
  "pad":"      "}
 ```
