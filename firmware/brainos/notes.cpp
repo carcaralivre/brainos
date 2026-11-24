@@ -1,6 +1,7 @@
 #include "notes.h"
 #include <LittleFS.h>
 #include <esp_random.h>
+#include <algorithm>
 #include "provjson.h"
 
 static const char *FILE_NAME = "/notes.jsonl";
@@ -66,12 +67,22 @@ void notesBegin() {
   Serial.printf("notes: %u loaded%s\n", (unsigned)items.size(), bad ? " (some lines unreadable)" : "");
 }
 
-void notesSave() {
+bool notesSave() {
   File f = LittleFS.open("/notes.tmp", "w");
-  if (!f) { Serial.println("notes: can't write"); return; }
-  for (auto &n : items) f.println(lineOf(n));
+  if (!f) { Serial.println("notes: can't write"); return false; }
+  bool ok = true;
+  for (auto &n : items) {
+    String line = lineOf(n) + "\n";
+    if (f.write((const uint8_t *)line.c_str(), line.length()) != line.length()) { ok = false; break; }
+  }
   f.close();
+  if (!ok) {   // the flash is full: keep the old file whole rather than swap in a cut one
+    LittleFS.remove("/notes.tmp");
+    Serial.println("notes: NOT SAVED, the flash is full");
+    return false;
+  }
   LittleFS.rename("/notes.tmp", FILE_NAME);   // rename replaces the old file in one step: a power cut keeps one or the other
+  return true;
 }
 
 void notesPin(Note &n) {
@@ -124,4 +135,25 @@ int notesPending() {
   int c = 0;
   for (auto &n : items) if (n.busy()) c++;
   return c;
+}
+
+std::vector<int> notesSorted(int which, bool newestFirst) {
+  std::vector<int> idx;
+  for (size_t i = 0; i < items.size(); i++) if (which == 2 || items[i].archived == (which == 1)) idx.push_back(i);
+  std::sort(idx.begin(), idx.end(), [&](int a, int b) { return newestFirst ? items[a].created > items[b].created : items[a].created < items[b].created; });
+  return idx;
+}
+
+String notesWaitText(const Note &n) {
+  if (n.audio.length()) return String(n.asked ? "Question, " : "Recording, ") + n.secs + " s, waiting for Wi-Fi";
+  return n.asking ? "(asking…)" : n.tidying ? "(tidying…)" : "";
+}
+
+void notesFixClock(uint32_t bootTime) {
+  bool changed = false;
+  for (auto &n : items) {
+    if (n.created < 1700000000) { n.created += bootTime; changed = true; }
+    if (n.modified < 1700000000) { n.modified += bootTime; changed = true; }
+  }
+  if (changed) { Serial.println("notes: dated by the clock that was just set"); notesSave(); }
 }

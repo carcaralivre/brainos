@@ -118,8 +118,8 @@ int refreshCount(bool full) { return full ? fullRefreshes : partialRefreshes; }
 
 // A full refresh flashes and leaves no ghosts; a partial one is quick.
 // Ghosting budget, in fifths of a partial refresh: one the user caused
-// (touch, buttons, in the last minute) costs 5, a timed one with nobody
-// around (the clock's minute) costs 1. A full refresh comes at 60.
+// (touch, buttons, in the last minute) costs 5, one with nobody around (a
+// transcription arriving, the battery) costs 1. A full refresh comes at 100.
 void show(bool full) {
   if (!panel) return;
   bool idle = (int32_t)(millis() - lastActivity) > 60000;

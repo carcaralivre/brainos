@@ -28,11 +28,13 @@ code holds one JSON object:
 | `notes[].p` | 1 if the note is pinned on the board |
 | `notes[].q` | 1 if the note was a question to the assistant (the text is the question, a blank line, the answer) |
 | `notes[].t` | the text (UTF-8, JSON-escaped) |
+| `notes[].k`, `notes[].kn` | only on a note too long for one code: this is piece `k` of `kn`, cut between whole characters. The pieces come one after the other, in order, across parts too |
 | `pad` | spaces, ignored: every part of a batch is padded to the same length, so all its codes have the same density |
 
-The export holds every note that is not in the Archive, oldest first. The board shows the
-parts in order, about 1 second each, and starts again from part 1 until Done is tapped
-(or OK is pressed). A note that would not fit a part on its own is cut and ends with `…`.
+The export holds every note that is not in the Archive, oldest first, except one still
+waiting for a transcription, an answer or Tidy (it goes in the next export). The board shows
+the parts in order, about 1 second each, and starts again from part 1 until Archive all (or
+Done) is tapped or OK is pressed. A note too long for one part goes in pieces; nothing is cut.
 
 ## Reading
 
@@ -40,8 +42,8 @@ parts in order, about 1 second each, and starts again from part 1 until Done is 
 2. Keep parts in a set keyed by `b` + `i`. A part seen twice is the same part.
 3. The batch is complete when parts 1..`n` are all present. Show "k of n" meanwhile.
 4. A code with a different `b` is another export: ask before replacing what was gathered.
-5. Join the `notes` arrays in part order. Notes already seen in an earlier batch (same `id`)
-   may be skipped.
+5. Join the `notes` arrays in part order, appending the `t` of each piece with `k` > 1 to the
+   piece before it (same `id`). Notes already seen in an earlier batch (same `id`) may be skipped.
 
 "Archive all" on the board (tapped twice) moves the notes to the Archive when "Archive after
 exporting" is on (the default); with it off, the button is just "Done". Leaving with the back

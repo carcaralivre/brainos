@@ -29,14 +29,8 @@ uint32_t utf8Next(const char *s, int &i);
 int utf8Back(const char *s, int end);     // where the character before byte `end` starts
 int utf8Count(const char *s);             // characters, not bytes
 void utf8Append(String &out, uint32_t cp);
-// The longest start of `s` that is whole characters and at most `bytes` long.
-int utf8Cut(const char *s, int bytes);
 
 // Upper case for the letters the fonts have (Latin-1, Latin Extended-A,
 // comma-below, Cyrillic); `turkish`: i -> İ, ı -> I.
 uint32_t cpUpper(uint32_t cp);
 
-// Text from the internet or the AI as the screen can show it: what the
-// fonts have stays, the rest is folded (curly quotes, dashes, fractions...)
-// or dropped; controls become spaces.
-String textFold(const String &s);

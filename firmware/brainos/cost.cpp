@@ -3,12 +3,13 @@
 #include <Preferences.h>
 #include <time.h>
 #include <vector>
+#include "dates.h"
 
 static const char *LOG = "/costs.log";   // "YYYYMMDD micro" a line, oldest first
 static const size_t KEEP_DAYS = 400;
 static std::vector<std::pair<uint32_t, uint32_t>> days;   // (YYYYMMDD, micro)
 
-static bool clockSet() { return time(nullptr) > 1700000000; }
+static bool clockSet() { return clockKnown(); }
 
 static struct tm localDay(int daysAgo) {   // noon of that day, so a DST change can't move it to another date
   time_t t = time(nullptr);
@@ -34,9 +35,14 @@ void costBegin() {
 static void saveLog() {
   File f = LittleFS.open("/costs.tmp", "w");
   if (!f) return;
-  for (auto &d : days) f.printf("%lu %lu\n", (unsigned long)d.first, (unsigned long)d.second);
+  bool ok = true;
+  for (auto &d : days) {
+    char line[32]; int n = snprintf(line, sizeof line, "%lu %lu\n", (unsigned long)d.first, (unsigned long)d.second);
+    if (f.write((const uint8_t *)line, n) != (size_t)n) { ok = false; break; }
+  }
   f.close();
-  LittleFS.rename("/costs.tmp", LOG);
+  if (ok) LittleFS.rename("/costs.tmp", LOG);   // the flash full: the old log stays whole
+  else LittleFS.remove("/costs.tmp");
 }
 
 static String monthKey(const struct tm &tm) { char k[12]; snprintf(k, sizeof k, "m%04d%02d", tm.tm_year + 1900, tm.tm_mon + 1); return k; }
@@ -109,7 +115,6 @@ uint64_t costTotal() {
   return v;
 }
 
-static const char *MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-String costDayLabel(int n) { struct tm t = localDay(n); return String(MONTHS[t.tm_mon]) + " " + t.tm_mday; }
-String costWeekLabel(int n) { struct tm t = localDay(sinceMonday() + 7 * n); return String(MONTHS[t.tm_mon]) + " " + t.tm_mday; }
-String costMonthLabel(int n) { struct tm t = monthStart(n); return String(MONTHS[t.tm_mon]) + " " + (t.tm_year + 1900); }
+String costDayLabel(int n) { struct tm t = localDay(n); return String(monthShort(t.tm_mon)) + " " + t.tm_mday; }
+String costWeekLabel(int n) { struct tm t = localDay(sinceMonday() + 7 * n); return String(monthShort(t.tm_mon)) + " " + t.tm_mday; }
+String costMonthLabel(int n) { struct tm t = monthStart(n); return String(monthShort(t.tm_mon)) + " " + (t.tm_year + 1900); }

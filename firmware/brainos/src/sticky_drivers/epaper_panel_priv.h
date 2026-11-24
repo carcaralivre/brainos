@@ -90,7 +90,6 @@ bool seeed_epaper_panel_resolve_area(seeed_epaper_panel_t *panel,
                                      seeed_epaper_area_t *resolved);
 void seeed_epaper_panel_mirror_x(uint8_t *buffer, uint16_t width, uint16_t height);
 
-const seeed_epaper_driver_t *seeed_epaper_uc8179_driver(void);
 const seeed_epaper_driver_t *seeed_epaper_ssd1677_driver(void);
 
 esp_err_t seeed_epaper_panel_read_data(seeed_epaper_panel_t *panel, uint8_t *data);

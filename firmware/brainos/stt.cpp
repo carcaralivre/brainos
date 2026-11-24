@@ -42,15 +42,22 @@ static int post(const char *path, const uint8_t *body, size_t len, const String 
   return netPost("openrouter.ai", path, headers, body, len, reply, 90000);
 }
 
-static bool textOf(const String &reply, String &text) {   // {"text": "..."} from the service
-  pj::Val v, f;
-  return pj::parse(reply.c_str(), reply.length(), v) && pj::member(v, "text", f) && pj::str(f, text);
+// The cost OpenRouter reports in a reply (usage.cost, in dollars), in millionths; 0 when it says nothing.
+static uint32_t costOf(const pj::Val &v) {
+  pj::Val u, k;
+  if (pj::member(v, "usage", u) && pj::member(u, "cost", k) && k.type == pj::NUM) return (uint32_t)(strtod(k.p, nullptr) * 1e6 + 0.5);   // the number ends where strtod stops
+  return 0;
 }
-static bool answerOf(const String &reply, String &text, uint32_t &cost) {   // choices[0].message.content, usage.cost (dollars)
-  pj::Val v, a, c, m, t, u, k;
+static bool textOf(const String &reply, String &text, uint32_t &cost) {   // {"text": "...", "usage": {...}} from the service
+  pj::Val v, f;
+  if (!pj::parse(reply.c_str(), reply.length(), v) || !pj::member(v, "text", f) || !pj::str(f, text)) return false;
+  cost = costOf(v);
+  return true;
+}
+static bool answerOf(const String &reply, String &text, uint32_t &cost) {   // choices[0].message.content, usage.cost
+  pj::Val v, a, c, m, t;
   if (!pj::parse(reply.c_str(), reply.length(), v) || !pj::member(v, "choices", a) || !pj::at(a, 0, c) || !pj::member(c, "message", m) || !pj::member(m, "content", t) || !pj::str(t, text)) return false;
-  cost = 0;
-  if (pj::member(v, "usage", u) && pj::member(u, "cost", k) && k.type == pj::NUM) cost = (uint32_t)(strtod(k.p, nullptr) * 1e6 + 0.5);   // the number ends where strtod stops
+  cost = costOf(v);
   return true;
 }
 
@@ -65,8 +72,9 @@ static void chatTask() {
     if (reply.indexOf("model") >= 0 && code == 400) job.error = "OpenRouter doesn't know the assistant model";
     Serial.printf("ask: failed, %d: %s\n", code, logSafe(reply, 200).c_str());
   } else if (!answerOf(reply, job.text, job.cost)) {
-    job.error = "The assistant sent no answer";
-    Serial.printf("ask: no answer: %s\n", logSafe(reply, 120).c_str());
+    job.error = "The assistant's answer couldn't be read";
+    job.fatal = true;   // the same reply would come again: say so in the note instead of asking forever
+    Serial.printf("ask: unreadable answer (%u bytes): %s\n", (unsigned)reply.length(), logSafe(reply, 120).c_str());
   } else {
     job.text.trim();
     Serial.printf("ask: answered in %lu ms, %lu micro-dollars: %s\n", (unsigned long)(millis() - start), (unsigned long)job.cost, logSafe(job.text, 80).c_str());
@@ -97,12 +105,12 @@ static void sttTask() {
     job.fatal = code >= 400 && code < 500 && code != 429 && code != 401;   // a bad request or an unknown model will not get better; a key problem or a rate limit may
     if (reply.indexOf("model") >= 0 && code == 400) job.error = "OpenRouter doesn't know the model";
     Serial.printf("stt: failed, %d: %s\n", code, logSafe(reply, 200).c_str());
-  } else if (!textOf(reply, job.text)) {
+  } else if (!textOf(reply, job.text, job.cost)) {
     job.error = "OpenRouter sent no text";
     Serial.printf("stt: no text: %s\n", logSafe(reply, 120).c_str());
   } else {
     job.text.trim();
-    job.cost = costTranscription(model, job.secs);
+    if (!job.cost) job.cost = costTranscription(model, job.secs);   // what OpenRouter charged, or the price list
     Serial.printf("stt: heard \"%s\" in %lu ms\n", job.text.c_str(), (unsigned long)(millis() - start));
     if (!job.text.length()) { job.error = "Nothing was heard"; job.fatal = true; }
   }

@@ -20,7 +20,7 @@ struct Note {
 };
 
 void notesBegin();                                   // mount and load
-void notesSave();                                    // write the whole file atomically
+bool notesSave();                                    // write the whole file atomically; false (the old file kept) when the flash is full
 std::vector<Note, PsAlloc<Note>> &notesAll();
 Note *notesFind(const String &id);
 void notesPin(Note &n);   // pins (or unpins); with three already pinned, the oldest pin is let go
@@ -29,3 +29,6 @@ void notesRemove(const String &id, bool keepAudio = false);   // and its audio f
 int notesCount(bool archived);                       // how many in the list (or in the archive)
 int notesPending();                                  // recordings waiting for transcription
 String notesNewId();
+std::vector<int> notesSorted(int which, bool newestFirst);   // indexes into notesAll(): which 0 the list, 1 the archive, 2 all
+String notesWaitText(const Note &n);                 // what the note waits for: "Recording, 12 s, waiting for Wi-Fi", "(asking…)", "(tidying…)", or ""
+void notesFixClock(uint32_t bootTime);               // the clock was just set: notes made before it (dated 1970) move to this boot's real time

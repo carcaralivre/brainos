@@ -1,8 +1,8 @@
 #include "chat.h"
 #include <LittleFS.h>
 #include <algorithm>
-#include <time.h>
 #include "config.h"
+#include "dates.h"
 #include "provjson.h"
 
 PassChat chat;
@@ -36,7 +36,10 @@ std::vector<String> chatTurnsOf(const String &text) {
     int cut = text.indexOf("\n\n", at);
     String t = text.substring(at, cut < 0 ? text.length() : cut);
     t.trim();
-    if (t.length()) out.push_back(t);
+    // A question that never made it (no transcription) has no answer after it either: leaving it
+    // out keeps question and answer in turn. "(no answer: …)" stays: it stands in the answer's place.
+    bool lost = t.startsWith("(not transcribed:") || t == "(recording lost)";
+    if (t.length() && !lost) out.push_back(t);
     if (cut < 0) break;
     at = cut + 2;
   }
@@ -55,27 +58,18 @@ String chatAnswerText(String a) {
   return a;
 }
 
-static String day(uint32_t t) {
-  time_t s = t; struct tm tm; localtime_r(&s, &tm);
-  char b[24]; strftime(b, sizeof b, "%Y-%m-%d %H:%M", &tm);
-  return b;
-}
-
 // The notes on the list, for a question asked outside a note: the pinned ones always, then the
 // newest, up to 30 notes or about 6000 characters, whichever comes first.
 static String notesContext() {
   auto &all = notesAll();
-  std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && all[i].text.length()) idx.push_back(i);
-  std::sort(idx.begin(), idx.end(), [&](int a, int b) {
-    if (all[a].pinned != all[b].pinned) return all[a].pinned;
-    return all[a].created > all[b].created;
-  });
+  std::vector<int> idx = notesSorted(0, true);
+  std::stable_sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].pinned && !all[b].pinned; });   // the pinned ones first
   String s;
   int n = 0;
   for (int i : idx) {
     const Note &x = all[i];
-    String line = "- " + day(x.created) + (x.pinned ? " (pinned)" : "") + ": " + x.text + "\n";
+    if (!x.text.length()) continue;
+    String line = "- " + dateText(x.created, "%Y-%m-%d %H:%M") + (x.pinned ? " (pinned)" : "") + ": " + x.text + "\n";
     if (!x.pinned && (n >= 30 || s.length() + line.length() > 6000)) break;
     s += line; n++;
   }

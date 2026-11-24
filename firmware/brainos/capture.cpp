@@ -22,7 +22,7 @@ static size_t micRecord(bool (*keepGoing)(), int16_t **pcm) {
   i2s.setPinsPdmRx(PIN_MIC_CLK, PIN_MIC_DATA);
   if (!i2s.begin(I2S_MODE_PDM_RX, RATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO)) {
     digitalWrite(PIN_MIC_EN, LOW);
-    why = "The microphone didn't start";
+    why = "Microphone didn't start";
     return 0;
   }
   const size_t maxSamples = (size_t)RATE * MAX_SECONDS;
@@ -37,7 +37,7 @@ static size_t micRecord(bool (*keepGoing)(), int16_t **pcm) {
   }
   i2s.end();
   digitalWrite(PIN_MIC_EN, LOW);
-  if (!buf || !n) { why = buf ? "Nothing recorded" : "No memory for the recording"; free(buf); return 0; }
+  if (!buf || !n) { why = buf ? "Too short" : "No memory to record"; free(buf); return 0; }
   int64_t sum = 0;
   for (size_t i = 0; i < n; i++) sum += buf[i];
   int mean = sum / (int64_t)n, peak = 1;
@@ -58,7 +58,7 @@ static bool writeWav(const String &path, const int16_t *pcm, size_t n) {
   memcpy(h + 4, &riff, 4); memcpy(h + 24, &rate, 4); memcpy(h + 28, &bytesPerSec, 4); memcpy(h + 40, &data, 4);
   bool ok = f.write(h, 44) == 44;
   const uint8_t *p = (const uint8_t *)pcm;
-  for (size_t off = 0; ok && off < data; off += 4096) ok = f.write(p + off, min<size_t>(4096, data - off)) > 0;
+  for (size_t off = 0; ok && off < data; off += 4096) { size_t n = min<size_t>(4096, data - off); ok = f.write(p + off, n) == n; }   // a short write: the flash is full
   f.close();
   if (!ok) LittleFS.remove(path);
   return ok;
@@ -67,7 +67,7 @@ static bool writeWav(const String &path, const int16_t *pcm, size_t n) {
 int captureRecord(bool (*keepGoing)(), String &path, String &id) {
   int16_t *pcm;
   size_t n = micRecord(keepGoing, &pcm);
-  if (n < (size_t)RATE / 2) { free(pcm); if (n) why = "Too short"; return 0; }
+  if (n < (size_t)RATE / 2) { free(pcm); if (n || !*why) why = "Too short"; return 0; }   // under half a second
   id = notesNewId();
   path = "/queue/" + id + ".wav";
   uint32_t t = millis();

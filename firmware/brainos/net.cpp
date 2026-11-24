@@ -22,7 +22,7 @@ static String locatedOn;   // the network the time zone and language were last t
 static volatile uint8_t lastReason;
 
 bool netUp() { return WiFi.status() == WL_CONNECTED; }
-bool timeKnown() { return time(nullptr) > 1700000000; }
+static bool timeKnown() { return time(nullptr) > 1700000000; }
 String netName() { return netUp() ? WiFi.SSID() : String(); }
 String netAddress() { return netUp() ? WiFi.localIP().toString() : String(); }
 int netSignal() { return netUp() ? WiFi.RSSI() : 0; }
@@ -110,7 +110,11 @@ void netTick() {
   if (!up && wasUp) Serial.printf("wifi: dropped (reason %d)\n", lastReason);
   wasUp = up;
   if (up) {
-    if (clockStarted && !rtcSynced && timeKnown()) { rtcFromSystem(); rtcSynced = true; Serial.println("rtc: set from the network"); }
+    if (clockStarted && !rtcSynced && timeKnown()) {
+      static bool fixed;
+      if (!fixed) { fixed = true; notesFixClock(time(nullptr) - millis() / 1000); }   // notes made before the clock was known
+      rtcFromSystem(); rtcSynced = true; Serial.println("rtc: set from the network");
+    }
     tryIndex = -1;
     return;
   }
@@ -274,7 +278,7 @@ int netPost(const char *host, const char *path, const String &headers, const uin
     if (l.startsWith("transfer-encoding:") && l.indexOf("chunked") >= 0) chunked = true;
     if (l.startsWith("content-length:")) contentLength = l.substring(15).toInt();
   }
-  const size_t MAX = 65536;
+  const size_t MAX = 262144;   // a long answer with citations still fits (PSRAM)
   if (chunked) {
     for (;;) {
       if (!readLine(tls, line, deadline)) break;

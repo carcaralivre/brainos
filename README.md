@@ -4,8 +4,6 @@ A voice notebook for the [Seeed reTerminal Sticky](https://www.seeedstudio.com/s
 
 Built on [Sticky OS](https://github.com/Sticky-OS/sticky-os) (MIT): its screen, touch and button plumbing, keyboard, settings store and update mechanism. Everything else was removed or rewritten. Not affiliated with Seeed Studio.
 
-![Lock screen](docs/shots/lock.png) ![Notes](docs/shots/notes.png) ![Export](docs/shots/export.png)
-
 ## What it does
 
 - **Two states**: awake, Wi-Fi is on, recordings and questions go out, and `brain.local` answers. Asleep, everything is off and the lock screen shows a small padlock; only OK wakes it. On battery it sleeps 3 minutes after the last touch or button (a setting on `brain.local`); plugged in, never. At midnight it wakes for a moment to change the date.
@@ -16,8 +14,8 @@ Built on [Sticky OS](https://github.com/Sticky-OS/sticky-os) (MIT): its screen, 
   - **Down**: in a note, a recording added at its end (in a chat note, the next question, with the conversation so far); anywhere else, a passing **Chat** about your notes, saved only if you tap *Save as note*.
 - **Notes**: grouped by day. Open one to pin it, edit it, *Tidy* it (the assistant fixes punctuation and drops filler words; the original is kept), archive or delete it. A long note scrolls by pages with Up/Down; a swipe sideways goes to the next note.
 - **Costs**: each note shows what it cost (transcriptions and answers); the board's About and `brain.local` show the totals by day, week and month.
-- **brain.local**: a page on your network to paste the OpenRouter key, read, pin, tidy, archive and delete notes (with *Undo*), download them as Markdown, add Wi-Fi networks, and change settings.
-- **Export**: a loop of QR codes with the notes on the list; the [reader page](https://carcaralivre.github.io/brainos-reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
+- **brain.local**: a page on your network to paste the OpenRouter key, read, pin, tidy, archive and delete notes (with *Undo*), download them as Markdown, add Wi-Fi networks, and change settings. It refreshes itself while something waits for the cloud, keeps the board awake while you use it, and only takes changes from itself.
+- **Export**: a loop of QR codes with the notes on the list (a long note goes in pieces, never cut); the [reader page](https://carcaralivre.github.io/brainos-reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
 - **Archive**, **Settings** on the board (Wi-Fi with a scan and a keyboard, export, archive, about), **updates over Wi-Fi** from this repository's releases, with rollback.
 
 ## Install
@@ -50,6 +48,6 @@ Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/too
 | `firmware/brainos/` | the sketch: `board`, `screen`, `touch`, `rtc` (hardware); `notes`, `capture`, `stt`, `chat`, `cost`, `net`, `web`, `export`, `ota` (features); `ui`, `keyboard` (screens) |
 | `firmware/build.sh`, `firmware/tools/` | build, flash, screenshots, serial driving |
 | `site/` | the Install page (esp-web-tools), deployed to GitHub Pages by the Install-page workflow after each release |
-| `docs/` | the QR payload spec, the guide, the spike's record, screenshots |
+| `docs/` | the QR payload spec, the guide, the spike's record |
 
 MIT, see LICENSE.

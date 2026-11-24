@@ -7,6 +7,10 @@
 #include "board.h"
 #include "cost.h"
 #include "config.h"
+#include "dates.h"
+#include "glyphs.h"
+#include "screen.h"
+#include "ui.h"
 #include "net.h"
 #include "notes.h"
 #include "ota.h"
@@ -23,16 +27,18 @@ extern const char *const VERSION;
 static const char *READER = "https://carcaralivre.github.io/brainos-reader/";
 
 // Undo: the notes as they were before the last delete, archive or export, for 6 s (a few more
-// here, for a slow phone). A deleted recording's audio file stays until then.
+// here, for a slow phone). A deleted recording's audio file stays until then. Undoing an archive
+// gives back only where the note was (and its pin), so a transcription that landed meanwhile stays.
 static std::vector<Note> undoNotes;
 static String undoWhat;        // "Deleted", "Archived", "Exported and archived"
+static bool undoDelete;        // the notes are gone (put them back whole) or only archived
 static uint32_t undoAt;
 static const uint32_t UNDO_SHOW = 6000, UNDO_KEEP = 10000;
 static void undoForget() {
   for (auto &n : undoNotes) if (n.audio.length() && !notesFind(n.id)) LittleFS.remove(n.audio);
   undoNotes.clear(); undoWhat = "";
 }
-static void undoStart(const char *what) { undoForget(); undoWhat = what; undoAt = millis(); }
+static void undoStart(const char *what, bool deleted) { undoForget(); undoWhat = what; undoDelete = deleted; undoAt = millis(); }
 static bool undoLive() { return undoWhat.length() && millis() - undoAt < UNDO_KEEP; }
 
 static String html(const String &s) {
@@ -44,10 +50,17 @@ static String html(const String &s) {
   return o;
 }
 
-static String when(uint32_t t) {
-  time_t secs = t; struct tm tm; localtime_r(&secs, &tm);
-  char b[32]; strftime(b, sizeof(b), "%d %b %Y, %H:%M", &tm); return b;
-}
+static String when(uint32_t t) { return dateText(t, "%d %b %Y, %H:%M"); }
+
+// A page goes out in pieces as it is written, so a long list never sits whole in memory and the
+// board's buttons wait less.
+struct Out {
+  String buf;
+  void begin(const char *type) { buf.reserve(4200); server.setContentLength(CONTENT_LENGTH_UNKNOWN); server.send(200, type, ""); }
+  Out &operator+=(const String &s) { buf += s; if (buf.length() > 4000) flush(); return *this; }
+  void flush() { if (buf.length()) server.sendContent(buf); buf = ""; }
+  void end() { flush(); server.sendContent(""); }
+};
 
 static const char CSS[] PROGMEM =
   ":root{--bg:#faf8f4;--card:#f5f2ec;--sunken:#fdfcfa;--accent:#efebe3;--border:#e5e0d5;--input:#d9d3c7;--fg:#1a1917;--muted:#6b6760;--tertiary:#716b62;--primary:#2d2d2b;--destructive:#a03030}"
@@ -103,12 +116,11 @@ static String option(const String &value, const String &label, const String &cur
   return "<option value='" + html(value) + "'" + (value == current ? " selected" : "") + ">" + html(label) + "</option>";
 }
 
-static void noteCard(String &p, const Note &n, bool first, const char *back) {
+static void noteCard(Out &p, const Note &n, bool first, const char *back) {
   p += "<div class='note" + String(first ? " first" : "") + "'>";
   if (n.text.length()) p += "<p>" + html(n.text) + "</p>";
-  if (n.audio.length()) p += "<p class='pend'>" + String(n.asked ? "Question" : "Recording") + " of " + String(n.secs) + " s, waiting for transcription</p>";
-  else if (n.asking) p += "<p class='pend'>(asking…)</p>";
-  else if (n.tidying) p += "<p class='pend'>(tidying…)</p>";
+  String wait = notesWaitText(n);   // the same words as on the board
+  if (wait.length()) p += "<p class='pend'>" + html(wait) + "</p>";
   p += "<div class='meta'>" + when(n.created) + " · " + costText(n.cost) + (n.pinned ? " · pinned" : "") + (n.asked ? " · chat" : "") + (n.orig.length() ? " · tidied" : "") + "</div>";
   p += "<div class='row'><form method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='back' value='" + back + "'>";
   if (n.archived) p += "<button name='do' value='restore'>Restore</button>";
@@ -118,7 +130,7 @@ static void noteCard(String &p, const Note &n, bool first, const char *back) {
     if (!n.busy() && n.text.length()) p += "<button name='do' value='tidy'>Tidy</button>";
   }
   p += "<button class='d' name='do' value='delete' data-arm='Yes, delete'>Delete</button></form></div>";
-  if (!n.archived && !n.busy()) p += "<details><summary>Edit</summary><form class='b' method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text'>" + html(n.text) + "</textarea><p></p><input class='o' type='submit' value='Save'></form></details>";
+  if (!n.archived && !n.busy()) p += "<details><summary>Edit</summary><form class='b' method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text' maxlength='" + String(KB_NOTE_MAX) + "'>" + html(n.text) + "</textarea><p></p><input class='o' type='submit' value='Save'></form></details>";
   p += "</div>";
 }
 
@@ -130,20 +142,24 @@ static String undoToast(const char *back) {
          "<script>setTimeout(function(){var u=document.getElementById('undo');if(u)u.remove()}," + String(left) + ")</script>";
 }
 
-static void costRows(String &p, const char *title, int count, uint64_t (*sum)(int), String (*label)(int)) {
+static void costRows(Out &p, const char *title, int count, uint64_t (*sum)(int), String (*label)(int)) {
   p += "<h3>" + String(title) + "</h3><table>";
   for (int i = 0; i < count; i++) p += "<tr><td>" + label(i) + "</td><td>" + costText(sum(i)) + "</td></tr>";
   p += "</table>";
 }
 
+static const size_t PAGE_NOTES = 50;   // the newest notes on the page; "Show all" for the rest
+static const char RELOAD[] PROGMEM =   // while something waits for the cloud: reload every 5 s, unless you are typing or a part is open
+  "<script>setInterval(function(){var a=document.activeElement;if(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))return;"
+  "if(document.querySelector('details[open],button[data-armed]'))return;location.reload()},5000)</script>";
+
 static void sendPage(const String &msg) {
   String name = cfg::str("device.name");
   auto &all = notesAll();
-  std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived) idx.push_back(i);
-  std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created > all[b].created; });
-  String p;
-  p.reserve(9000 + 700 * idx.size());
+  std::vector<int> idx = notesSorted(0, true);
+  bool showAll = server.arg("all") == "1";
+  Out p;
+  p.begin("text/html; charset=utf-8");
   p += head(name);
   int pend = notesPending(), arch = notesCount(true);
   p += "<header><h1>" + html(name) + "</h1><a class='btn o' href='" + String(READER) + "'>QR reader</a></header><div class='chips'>";
@@ -154,17 +170,21 @@ static void sendPage(const String &msg) {
   if (msg.length()) p += "<div class='msg'>" + html(msg) + "</div>";
   if (strlen(sttLastError())) p += "<p class='pend'>Last transcription problem: " + html(sttLastError()) + "</p>";
 
-  p += "<div class='card'><h2>New note</h2><form class='b' method='post' action='/new'><textarea name='text' placeholder='Type a note'></textarea><p></p><input class='p' type='submit' value='Save note'></form></div>";
+  p += "<div class='card'><h2>New note</h2><form class='b' method='post' action='/new'><textarea name='text' placeholder='Type a note' maxlength='" + String(KB_NOTE_MAX) + "'></textarea><p></p><input class='p' type='submit' value='Save note'></form></div>";
 
   p += "<div class='card'><h2>Notes · " + String(idx.size()) + (pend ? ", " + String(pend) + " waiting" : String()) + "</h2>";
   if (idx.empty()) p += "<p class='mute'>None yet. Hold OK on the board and speak.</p>";
   bool first = true;
-  for (int i : idx) { noteCard(p, all[i], first, "/"); first = false; }
+  size_t shown = 0;
+  for (int i : idx) {
+    if (!showAll && shown == PAGE_NOTES) { p += "<p style='margin:12px 0 0'><a class='btn o' href='/?all=1'>Show all " + String(idx.size()) + " notes</a></p>"; break; }
+    noteCard(p, all[i], first, "/"); first = false; shown++;
+  }
   p += "</div>";
 
   p += "<div class='card'><h2>Export</h2><p class='mute'>On the board, Settings → Export shows the notes as QR codes. Open the QR reader (button at the top), tap Scan and point the camera at the board; when the reader has every part, tap Archive all on the board.</p>";
   int fresh = 0;
-  for (int i : idx) if (all[i].text.length()) fresh++;
+  for (int i : idx) if (all[i].text.length() && !all[i].busy()) fresh++;   // a note still waiting for the cloud stays for the next export
   p += "<p class='mute'>Or export here: " + String(fresh) + " note" + (fresh == 1 ? "" : "s") + " as a Markdown file" + (cfg::flag("export.archive") ? ", which moves them to the Archive" : "") + ".</p><div class='row'>";
   if (fresh) p += "<form method='post' action='/export' onsubmit='setTimeout(function(){location.href=\"/\"},1500)'><input class='o' type='submit' value='Export these notes (.md)'></form>";
   p += "<a class='btn o' href='/notes.md'>All notes (.md)</a><a class='btn o' href='/notes.json'>JSON</a>" + (arch ? "<a class='btn o' href='/archive'>Archive · " + String(arch) + "</a>" : String()) + "</div></div>";
@@ -204,7 +224,7 @@ static void sendPage(const String &msg) {
   p += "<label>On battery, sleep after this many minutes without a touch or a button (Wi-Fi and this page go off; OK wakes it)</label><input type='number' name='sleep' min='1' max='1440' value='" + String(cfg::num("sleep.min")) + "'>";
   p += "<label class='check'><input type='checkbox' name='archive' " + String(cfg::flag("export.archive") ? "checked" : "") + "> Archive notes after exporting</label>";
   p += "<p></p><input class='o' type='submit' value='Save settings'></form>";
-  p += "<h2 style='margin-top:20px'>Costs</h2><p class='mute'>What OpenRouter charged: transcriptions (by length) and answers. Deleting a note keeps its cost here.</p>";
+  p += "<h2 style='margin-top:20px'>Costs</h2><p class='mute'>What OpenRouter charged for transcriptions and answers (a transcription it doesn't report is priced by its length). Deleting a note keeps its cost here.</p>";
   costRows(p, "Last 7 days", 7, costDaysAgo, costDayLabel);
   costRows(p, "Last 4 weeks (from Monday)", 4, costWeeksAgo, costWeekLabel);
   costRows(p, "Last 12 months", 12, costMonthsAgo, costMonthLabel);
@@ -214,8 +234,8 @@ static void sendPage(const String &msg) {
   p += "<div class='card'><h2>About</h2><p class='mute'>BrainOS " + String(VERSION) + " on " + html(name) + ". " + (u.checkedMs ? html(u.status) : String("Updates are checked only when you ask.")) + "</p><div class='row'><form method='post' action='/update'><button class='o' name='do' value='check'>Check for update</button>";
   if (u.available) p += "<button class='o' name='do' value='install' data-arm='Yes, install'>Install " + html(u.latest) + "</button>";
   p += "</form></div></div>";
-  p += "</div>" + undoToast("/") + "<script>" + String(FPSTR(JS)) + "</script></body></html>";
-  server.send(200, "text/html; charset=utf-8", p);
+  p += "</div>" + undoToast("/") + "<script>" + String(FPSTR(JS)) + "</script>" + (pend ? String(FPSTR(RELOAD)) : String()) + "</body></html>";
+  p.end();
 }
 
 static void handleRoot() { sendPage(""); }
@@ -256,16 +276,23 @@ static void handleWifi() {
   sendPage(msg);
 }
 
+static const char *TOO_LONG = "Not saved: a note holds at most 4000 characters";
+static bool tooLong(const String &t) { return utf8Count(t.c_str()) > KB_NOTE_MAX; }
+
 static void handleNote() {
   Note *n = notesFind(server.arg("id"));
   String d = server.arg("do");
   if (n) {
-    if (d == "delete") { undoStart("Deleted"); undoNotes.push_back(*n); notesRemove(n->id, true); }
+    if (d == "delete") { undoStart("Deleted", true); undoNotes.push_back(*n); notesRemove(n->id, true); }
     else if (d == "pin" && !n->archived) notesPin(*n);
-    else if (d == "archive" && !n->busy()) { undoStart("Archived"); undoNotes.push_back(*n); n->archived = true; n->pinned = false; notesSave(); }
+    else if (d == "archive" && !n->busy()) { undoStart("Archived", false); undoNotes.push_back(*n); n->archived = true; n->pinned = false; notesSave(); }
     else if (d == "restore") { n->archived = false; notesSave(); }
     else if (d == "tidy" && !n->archived && !n->busy() && n->text.length()) { n->tidying = true; notesSave(); }
-    else if (d == "edit" && !n->archived && !n->busy()) { String t = server.arg("text"); t.trim(); if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); } }
+    else if (d == "edit" && !n->archived && !n->busy()) {
+      String t = server.arg("text"); t.trim();
+      if (tooLong(t)) { sendPage(TOO_LONG); return; }
+      if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); }
+    }
   }
   uiNotesChanged();
   back(server.arg("back") == "/archive" ? "/archive" : "/");   // only our own two pages
@@ -273,6 +300,7 @@ static void handleNote() {
 
 static void handleNew() {
   String t = server.arg("text"); t.trim();
+  if (tooLong(t)) { sendPage(TOO_LONG); return; }
   if (t.length()) notesAdd(t, "", 0);
   uiNotesChanged();
   back("/");
@@ -289,22 +317,23 @@ static String item(const Note &n, bool showArchived) {
 }
 
 static void handleExport() {
-  String p = "# " + cfg::str("device.name") + ", exported " + when(time(nullptr)) + "\n\n";
   auto &all = notesAll();
   std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && all[i].text.length()) idx.push_back(i);
-  std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created < all[b].created; });
+  for (int i : notesSorted(0, false)) if (all[i].text.length() && !all[i].busy()) idx.push_back(i);   // a note still waiting for the cloud stays for the next export
   bool archive = cfg::flag("export.archive");
-  if (archive && !idx.empty()) undoStart("Exported and archived");
+  if (archive && !idx.empty()) undoStart("Exported and archived", false);
+  server.sendHeader("Content-Disposition", "attachment; filename=brainos-export.md");
+  Out p;
+  p.begin("text/markdown; charset=utf-8");
+  p += "# " + cfg::str("device.name") + ", exported " + when(time(nullptr)) + "\n\n";
   for (int i : idx) {
     Note &n = all[i];
     p += item(n, false);
     if (archive) { undoNotes.push_back(n); n.archived = true; n.pinned = false; }
   }
+  p.end();
   if (archive && !idx.empty()) notesSave();
   uiNotesChanged();
-  server.sendHeader("Content-Disposition", "attachment; filename=brainos-export.md");
-  server.send(200, "text/markdown; charset=utf-8", p);
 }
 
 static void handleUpdate() {
@@ -316,28 +345,30 @@ static void handleUpdate() {
 }
 
 static void handleArchive() {
-  String p = head("Archive");
+  Out p;
+  p.begin("text/html; charset=utf-8");
+  p += head("Archive");
   p += "<header><h1>Archive</h1><a class='btn o' href='/'>Notes</a></header><div class='card'>";
   bool first = true, any = false;
-  for (auto &n : notesAll()) if (n.archived) { noteCard(p, n, first, "/archive"); first = false; any = true; }
+  for (int i : notesSorted(1, true)) { noteCard(p, notesAll()[i], first, "/archive"); first = false; any = true; }
   if (!any) p += "<p class='mute'>The archive is empty.</p>";
   p += "</div></div>" + undoToast("/archive") + "<script>" + String(FPSTR(JS)) + "</script></body></html>";
-  server.send(200, "text/html; charset=utf-8", p);
+  p.end();
 }
 
 static void handleMd() {
-  String p = "# " + cfg::str("device.name") + "\n\n";
-  auto &all = notesAll();
-  std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) idx.push_back(i);
-  std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created > all[b].created; });
-  for (int i : idx) p += item(all[i], true);
   server.sendHeader("Content-Disposition", "attachment; filename=notes.md");
-  server.send(200, "text/markdown; charset=utf-8", p);
+  Out p;
+  p.begin("text/markdown; charset=utf-8");
+  p += "# " + cfg::str("device.name") + "\n\n";
+  for (int i : notesSorted(2, true)) p += item(notesAll()[i], true);
+  p.end();
 }
 
 static void handleJson() {
-  String p = "[";
+  Out p;
+  p.begin("application/json");
+  p += "[";
   bool first = true;
   for (auto &n : notesAll()) {
     if (!first) p += ",";
@@ -345,14 +376,15 @@ static void handleJson() {
     p += "{\"id\":\"" + n.id + "\",\"text\":" + pj::esc(n.text) + ",\"created\":" + n.created + ",\"pinned\":" + (n.pinned ? "true" : "false") + ",\"archived\":" + (n.archived ? "true" : "false") + ",\"asked\":" + (n.asked ? "true" : "false") + ",\"pending\":" + (n.busy() ? "true" : "false") + ",\"cost_usd\":" + String(n.cost / 1e6, 6) + (n.orig.length() ? ",\"original\":" + pj::esc(n.orig) : String()) + "}";
   }
   p += "]";
-  server.send(200, "application/json", p);
+  p.end();
 }
 
 static void handleUndo() {
   if (undoLive()) {
     for (auto &was : undoNotes) {
       Note *n = notesFind(was.id);
-      if (n) *n = was; else notesAll().push_back(was);
+      if (!n) { if (undoDelete) notesAll().push_back(was); }   // a deleted note comes back whole
+      else { n->archived = was.archived; n->pinned = was.pinned; }   // an archived one only goes back to the list
     }
     notesSave();
     undoNotes.clear(); undoWhat = "";
@@ -361,18 +393,38 @@ static void handleUndo() {
   back(server.arg("back") == "/archive" ? "/archive" : "/");
 }
 
+// A change asked for by another web page (one open in the same browser, on another site) is
+// refused: the browser says where a form came from, and it has to be this page.
+static bool fromThisPage() {
+  String host = server.hostHeader(), origin = server.header("Origin"), ref = server.header("Referer");
+  if (origin.length()) return origin == "http://" + host;
+  if (ref.length()) return ref.startsWith("http://" + host + "/");
+  return true;   // no browser around it (a script on the network): nothing to check against
+}
+
+// Every request: the board stays awake while the page is in use; a change must come from this page.
+static void route(const char *path, HTTPMethod method, void (*fn)()) {
+  server.on(path, method, [method, fn] {
+    lastActivity = millis();
+    if (method == HTTP_POST && !fromThisPage()) { server.send(403, "text/plain", "Only the page at brain.local can change the board"); return; }
+    fn();
+  });
+}
+
 void webBegin() {
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/settings", HTTP_POST, handleSettings);
-  server.on("/wifi", HTTP_POST, handleWifi);
-  server.on("/note", HTTP_POST, handleNote);
-  server.on("/new", HTTP_POST, handleNew);
-  server.on("/export", HTTP_POST, handleExport);
-  server.on("/update", HTTP_POST, handleUpdate);
-  server.on("/undo", HTTP_POST, handleUndo);
-  server.on("/archive", HTTP_GET, handleArchive);
-  server.on("/notes.md", HTTP_GET, handleMd);
-  server.on("/notes.json", HTTP_GET, handleJson);
+  const char *headers[] = {"Origin", "Referer"};
+  server.collectHeaders(headers, 2);
+  route("/", HTTP_GET, handleRoot);
+  route("/settings", HTTP_POST, handleSettings);
+  route("/wifi", HTTP_POST, handleWifi);
+  route("/note", HTTP_POST, handleNote);
+  route("/new", HTTP_POST, handleNew);
+  route("/export", HTTP_POST, handleExport);
+  route("/update", HTTP_POST, handleUpdate);
+  route("/undo", HTTP_POST, handleUndo);
+  route("/archive", HTTP_GET, handleArchive);
+  route("/notes.md", HTTP_GET, handleMd);
+  route("/notes.json", HTTP_GET, handleJson);
   server.onNotFound([] { server.send(404, "text/plain", "Not here"); });
 }
 

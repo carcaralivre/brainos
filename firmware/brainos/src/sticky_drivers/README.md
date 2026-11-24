@@ -2,7 +2,7 @@
 
 Copied unchanged, MIT (see LICENSE):
 
-- the e-paper panel component (SSD1677 / SSD2677 / UC8179), from
+- the e-paper panel component (SSD1677 / SSD2677; the UC8179 driver left out, no Sticky has it), from
   https://github.com/limengdu/reterminal_sticky_handwriting_pad, commit c01e2d6;
 - the GT911 touch driver and app_debug_log.h, from Seeed's
   https://github.com/Seeed-Projects/sticky-esp-idf-dashboard, commit 1a28b2a.

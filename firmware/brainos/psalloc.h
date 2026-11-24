@@ -1,6 +1,5 @@
 // An allocator for std::vector that puts the elements in PSRAM (8 MB on
-// this board) instead of the scarce internal heap. Off the board (the host
-// tests) it is plain malloc.
+// this board) instead of the scarce internal heap; plain malloc off the chip.
 #pragma once
 #include <stdlib.h>
 #include <new>
@@ -35,6 +34,3 @@ template <class T, class U>
 bool operator==(const PsAlloc<T> &, const PsAlloc<U> &) { return true; }
 template <class T, class U>
 bool operator!=(const PsAlloc<T> &, const PsAlloc<U> &) { return false; }
-
-template <class T>
-using PsVec = std::vector<T, PsAlloc<T>>;

@@ -1002,8 +1002,6 @@ static esp_err_t configure_busy_interrupt(seeed_epaper_panel_t *panel)
 static const seeed_epaper_driver_t *select_driver(seeed_epaper_panel_model_t model)
 {
     switch (model) {
-    case SEEED_EPAPER_PANEL_UC8179:
-        return seeed_epaper_uc8179_driver();
     case SEEED_EPAPER_PANEL_SSD1677:
     case SEEED_EPAPER_PANEL_STICKY_AUTO:
         return seeed_epaper_ssd1677_driver();

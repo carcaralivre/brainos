@@ -20,7 +20,7 @@ void keyboardDraw(Keyboard &kb);                   // the title, the field, Canc
 KbResult keyboardTap(Keyboard &kb, int x, int y);
 void keyboardMove(Keyboard &kb, int by);          // the cursor one character left (-1) or right (+1)
 String fitted(const GFXfont *font, String s, int width);
-std::vector<String> wrapped(const GFXfont *font, const String &s, int width);
+std::vector<String> wrapText(const GFXfont *font, const String &s, int width, std::vector<int> *starts = nullptr);   // every screen's line breaking
 // Typing on e-paper: a key marks the screen and loop() redraws once the taps pause.
 void redrawSoon();
 bool redrawDue(uint32_t afterMs = 350);   // true once, when it's time

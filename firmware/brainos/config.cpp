@@ -170,6 +170,11 @@ void begin() {
     }
   }
   p.end();
+  {  // settings earlier versions kept and nothing reads any more: let them go once
+    static const char *const GONE[] = {"wifi_idle", "sound", "upd_url", "sleep_min"};
+    Preferences w;
+    if (w.begin(NS, false)) { for (const char *k : GONE) if (w.isKey(k)) { w.remove(k); logf("config: dropped the old %s\n", k); } w.end(); }
+  }
   logf("config: %u networks, key %s\n", (unsigned)wifi.size(), isSet("stt.api_key") ? "set" : "not set");
 }
 

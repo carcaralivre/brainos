@@ -18,11 +18,33 @@ static uint32_t shownAt;
 static String batch;
 
 int exportParts() { return parts.size(); }
-int exportPart() { return part; }
-int exportNotes() { return ids.size(); }
 
-static String noteJson(const Note &n) {
-  return "{\"id\":\"" + n.id + "\",\"c\":" + String(n.created) + ",\"p\":" + (n.pinned ? "1" : "0") + ",\"q\":" + (n.asked ? "1" : "0") + ",\"t\":" + pj::esc(n.text) + "}";
+// A note, or one piece of a long one: "k" is the piece (1..kn); the reader joins the pieces of an id.
+static String noteJson(const Note &n, const String &text, int k, int kn) {
+  String s = "{\"id\":\"" + n.id + "\",\"c\":" + String(n.created) + ",\"p\":" + (n.pinned ? "1" : "0") + ",\"q\":" + (n.asked ? "1" : "0");
+  if (kn > 1) s += ",\"k\":" + String(k) + ",\"kn\":" + String(kn);
+  return s + ",\"t\":" + pj::esc(text) + "}";
+}
+
+static int escapedLen(unsigned char c) {   // what pj::esc makes of one byte
+  if (c == '"' || c == '\\' || c == '\n' || c == '\r' || c == '\t') return 2;
+  return c < 0x20 ? 6 : 1;
+}
+
+// The text in pieces whose escaped JSON is at most `room` bytes, cut between whole characters.
+static std::vector<String> pieces(const String &t, size_t room) {
+  std::vector<String> out;
+  size_t from = 0, len = 0;
+  for (size_t i = 0; i < t.length();) {
+    size_t n = 1;
+    unsigned char c = t[i];
+    if (c >= 0xF0) n = 4; else if (c >= 0xE0) n = 3; else if (c >= 0xC0) n = 2;
+    size_t add = n == 1 ? escapedLen(c) : n;
+    if (len + add > room && i > from) { out.push_back(t.substring(from, i)); from = i; len = 0; }
+    len += add; i += n;
+  }
+  out.push_back(t.substring(from));
+  return out;
 }
 
 bool exportStart() {
@@ -30,22 +52,27 @@ bool exportStart() {
   char b[8]; snprintf(b, sizeof(b), "%04x", (unsigned)(esp_random() & 0xFFFF)); batch = b;
   auto &all = notesAll();
   std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) if (!all[i].archived && all[i].text.length()) idx.push_back(i);   // everything that is not archived (a note still waiting goes with the text it has)
+  for (int i : notesSorted(0, false)) if (!all[i].busy() && all[i].text.length()) idx.push_back(i);   // the list, oldest first; a note still waiting for the cloud stays for the next export
   if (idx.empty()) return false;
-  std::sort(idx.begin(), idx.end(), [&](int a, int c) { return all[a].created < all[c].created; });
   String head = "{\"v\":1,\"b\":\"" + batch + "\",\"i\":I,\"n\":N,\"dev\":" + pj::esc(cfg::str("device.name")) + ",\"notes\":[";
   // Every part the same size: split the notes into n parts of about equal bytes, then pad the
   // shorter ones, so all the codes come out with the same density.
   std::vector<String> jsons;
   size_t total = 0;
-  for (int i : idx) {
-    String j = noteJson(all[i]);
-    if (j.length() + head.length() + 4 > PART_MAX) j = j.substring(0, PART_MAX - head.length() - 8) + "…\"}";
-    total += j.length() + 1;
-    jsons.push_back(j);
-    ids.push_back(all[i].id);
-  }
   size_t room = PART_MAX - head.length() - 20;
+  for (int i : idx) {
+    const Note &n = all[i];
+    String whole = noteJson(n, n.text, 1, 1);
+    std::vector<String> texts;
+    if (whole.length() <= room) texts.push_back(n.text);
+    else texts = pieces(n.text, room - noteJson(n, "", 99, 99).length());   // too long for one code: in pieces, never cut
+    for (size_t k = 0; k < texts.size(); k++) {
+      String j = texts.size() == 1 ? whole : noteJson(n, texts[k], k + 1, texts.size());
+      total += j.length() + 1;
+      jsons.push_back(j);
+    }
+    ids.push_back(n.id);
+  }
   int n = max<int>(1, (total + room - 1) / room), k = 0;
   size_t target = total / n + 1;
   String cur;

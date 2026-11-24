@@ -7,7 +7,7 @@
 
 namespace pj {
 
-static const int MAX_DEPTH = 6;
+static const int MAX_DEPTH = 16;   // OpenRouter's answers nest a few levels deep (citations, usage details)
 
 enum Type : char { NONE = 0, OBJ = 'o', ARR = 'a', STR = 's', NUM = 'n', BOOL = 'b', NUL = 'z' };
 

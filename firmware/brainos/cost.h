@@ -1,5 +1,5 @@
-// What the cloud costs: each transcription (by its length and the model's price a minute) and
-// each answer (OpenRouter says what it cost). Kept by day in /costs.log (400 days) and, in NVS,
+// What the cloud costs: what OpenRouter reports for each transcription and answer; a
+// transcription it says nothing about is priced by its length and the model's price a minute. Kept by day in /costs.log (400 days) and, in NVS,
 // by month and since the board was set up. Deleting a note never takes its cost away.
 #pragma once
 #include <Arduino.h>

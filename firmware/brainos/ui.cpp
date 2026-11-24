@@ -6,6 +6,7 @@
 #include "chat.h"
 #include "config.h"
 #include "cost.h"
+#include "dates.h"
 #include "export.h"
 #include "keyboard.h"
 #include "net.h"
@@ -39,7 +40,6 @@ static int kbPurpose;              // 1 edit the open note, 2 a Wi-Fi password, 
 static Screen kbBack;
 static std::vector<NetSeen> seen;  // the last scan
 static String joinSsid, wifiMsg;
-bool uiKeyboardShown() { return screen == SCREEN_KEYBOARD; }
 static Screen lockFrom = SCREEN_NOTES;   // where a lock came from: unlocking goes back there
 // Kept across deep sleep: the board wakes up where it was.
 RTC_DATA_ATTR static int rtcScreen = -1;
@@ -88,40 +88,19 @@ static void dim(int x, int y, int w, int h) {   // grey on a 1-bit screen: every
 
 // ---------------------------------------------------------------- text
 
-// Word-wraps s into lines no wider than width, at most maxLines (the last one gets an ellipsis).
+// At most maxLines lines of s; the last one ends in "…" when there is more.
 static std::vector<String> wrapLines(const GFXfont *font, const String &s, int width, int maxLines) {
-  std::vector<String> out;
-  String line, word;
-  auto flush = [&]() { out.push_back(line); line = ""; };
-  for (size_t i = 0; i <= s.length(); i++) {
-    char c = i < s.length() ? s[i] : ' ';
-    if (c == ' ' || c == '\n') {
-      if (word.length()) {
-        String tryLine = line.length() ? line + " " + word : word;
-        if (textW(font, tryLine.c_str()) <= width) line = tryLine;
-        else { if (line.length()) flush(); line = word; }
-        word = "";
-      }
-      if (c == '\n') flush();
-    } else word += c;
-    if ((int)out.size() >= maxLines) break;
-  }
-  if (line.length() && (int)out.size() < maxLines) out.push_back(line);
-  if ((int)out.size() > maxLines) out.resize(maxLines);
-  if ((int)out.size() == maxLines && out.size()) {
+  std::vector<String> out = wrapText(font, s, width);
+  if ((int)out.size() > maxLines) {
+    out.resize(maxLines);
     String &last = out.back();
-    size_t used = 0; for (auto &l : out) used += l.length() + 1;
-    if (used < s.length() + 1) { while (last.length() && textW(font, (last + "…").c_str()) > width) last.remove(last.length() - 1); last += "…"; }
+    while (last.length() && textW(font, (last + "…").c_str()) > width) last.remove(utf8Back(last.c_str(), last.length()));
+    last += "…";
   }
   return out;
 }
 
-static String timeOf(uint32_t t, bool withDate) {
-  time_t secs = t; struct tm tm; localtime_r(&secs, &tm);
-  char b[32];
-  strftime(b, sizeof(b), withDate ? "%b %d, %H:%M" : "%H:%M", &tm);
-  return String(b);
-}
+static String timeOf(uint32_t t, bool withDate) { return dateText(t, withDate ? "%b %d, %H:%M" : "%H:%M"); }
 
 static String dayLabel(uint32_t t) {
   time_t secs = t, nowS = time(nullptr);
@@ -129,8 +108,7 @@ static String dayLabel(uint32_t t) {
   int da = a.tm_year * 366 + a.tm_yday, db = b.tm_year * 366 + b.tm_yday;
   if (da == db) return "Today";
   if (da == db - 1) return "Yesterday";
-  static const char *MONTHS[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
-  return String(MONTHS[a.tm_mon]) + " " + a.tm_mday + (a.tm_year != b.tm_year ? String(", ") + (a.tm_year + 1900) : "");
+  return String(monthLong(a.tm_mon)) + " " + a.tm_mday + (a.tm_year != b.tm_year ? String(", ") + (a.tm_year + 1900) : "");
 }
 
 void uiTitle(const char *title) { textCentre(W / 2, 38, F_B12, title); }
@@ -155,23 +133,11 @@ static void button(int x, int y, int w, int h, const char *label, bool filled) {
 
 // A line of laid-out text: where it starts in the source (a byte offset, or a chat turn) and its font.
 struct Line { String s; const GFXfont *font; int start; };
-// Word-wraps s into out, every line; `tag` >= 0 puts that number in start instead of the offset.
+// Every line of s into out; `tag` >= 0 puts that number in start instead of the offset.
 static void wrapAll(std::vector<Line> &out, const GFXfont *font, const String &s, int width, int tag = -1) {
-  String line, word;
-  int lineStart = -1, wordStart = 0;
-  auto flush = [&](int at) { out.push_back({line, font, tag >= 0 ? tag : lineStart >= 0 ? lineStart : at}); line = ""; lineStart = -1; };
-  for (size_t i = 0; i <= s.length(); i++) {
-    char c = i < s.length() ? s[i] : '\n';
-    if (c == ' ' || c == '\n') {
-      if (word.length()) {
-        String tryLine = line.length() ? line + " " + word : word;
-        if (textW(font, tryLine.c_str()) <= width) { if (!line.length()) lineStart = wordStart; line = tryLine; }
-        else { if (line.length()) flush(wordStart); line = word; lineStart = wordStart; }
-        word = "";
-      }
-      if (c == '\n') flush(i);
-    } else { if (!word.length()) wordStart = i; word += c; }
-  }
+  std::vector<int> starts;
+  std::vector<String> lines = wrapText(font, s, width, &starts);
+  for (size_t i = 0; i < lines.size(); i++) out.push_back({lines[i], font, tag >= 0 ? tag : starts[i]});
 }
 // Pages of `per` lines; `focus` (a start to show, or -1) picks the page, otherwise `pg` is kept in range.
 static int pageLines(const std::vector<Line> &lines, int per, int &pg, int &focus, int &pages) {
@@ -187,11 +153,8 @@ static int pageLines(const std::vector<Line> &lines, int per, int &pg, int &focu
 }
 
 static String waitingOr(const Note &n) {   // the text, and what it waits for: a recording, an answer, Tidy
-  String s = n.text;
-  String wait = n.audio.length() ? String(n.asked ? "Question, " : "Recording, ") + n.secs + " s, waiting for Wi-Fi"
-              : n.asking ? "(asking…)" : n.tidying ? "(tidying…)" : "";
-  if (wait.length()) s += (s.length() ? "\n\n" : "") + wait;
-  return s;
+  String wait = notesWaitText(n);
+  return wait.length() ? n.text + (n.text.length() ? "\n\n" : "") + wait : n.text;
 }
 // In a list and on the lock screen: one run of text, its line breaks as spaces (an addition
 // after a blank line reads on, no "…" where the paragraph ends); a chat shows its first question.
@@ -215,36 +178,38 @@ struct Row { int noteIndex; int y, h; String day; };  // noteIndex -1: a day hea
 static std::vector<Row> rows;
 static const int NOTES_A_PAGE = 9, HEAD_H = 32, LIST_TOP = BAR + 8, LIST_BOTTOM_PAD = UI_MARGIN + UI_BTN + 12;   // nine notes a page; the rows stretch to fill it
 
-static std::vector<int> listed(bool archived) {
-  auto &all = notesAll();
-  std::vector<int> idx;
-  for (size_t i = 0; i < all.size(); i++) if (all[i].archived == archived) idx.push_back(i);
-  std::sort(idx.begin(), idx.end(), [&](int a, int b) { return all[a].created > all[b].created; });   // newest first; a pinned note keeps its place and shows the pin
-  return idx;
-}
+static std::vector<int> listed(bool archived) { return notesSorted(archived ? 1 : 0, true); }   // newest first; a pinned note keeps its place and shows the pin
 
 
-// Pages of nine notes. Each page's rows share the height left after its day headers, so the
-// list always ends at the same line just above the buttons.
+// Pages of up to nine notes. A page's rows share the height left after its day headers, so the
+// list always ends at the same line just above the buttons; a page whose notes span many days
+// takes fewer notes, so a row never gets too short for its two lines.
+static const int MIN_ROW = 58;
 static int listPages(bool archived) {
   rows.clear();
   auto idx = listed(archived);
   auto &all = notesAll();
   int pageH = H - LIST_TOP - LIST_BOTTOM_PAD, pages = 0;
   for (size_t at = 0; at < idx.size(); pages++) {
-    size_t end = min(idx.size(), at + NOTES_A_PAGE);
-    int heads = 0;
+    size_t k = min(idx.size() - at, (size_t)NOTES_A_PAGE);
+    int rowH = 0;
+    for (;; k--) {
+      int heads = 0;
+      String last;
+      for (size_t j = at; j < at + k; j++) { String d = dayLabel(all[idx[j]].created); if (d != last) { heads++; last = d; } }
+      int slots = at + k == idx.size() ? NOTES_A_PAGE : k;   // the last page keeps the full-page row height
+      rowH = (pageH - heads * HEAD_H) / max<int>(slots, k);
+      if (rowH >= MIN_ROW || k == 1) break;
+    }
+    int y = LIST_TOP + pages * pageH;
     String last;
-    for (size_t k = at; k < end; k++) { String d = dayLabel(all[idx[k]].created); if (d != last) { heads++; last = d; } }
-    int rowH = (pageH - heads * HEAD_H) / NOTES_A_PAGE, y = LIST_TOP + pages * pageH;
-    last = "";
-    for (size_t k = at; k < end; k++) {
-      String d = dayLabel(all[idx[k]].created);
+    for (size_t j = at; j < at + k; j++) {
+      String d = dayLabel(all[idx[j]].created);
       if (d != last) { rows.push_back({-1, y, HEAD_H, d}); y += HEAD_H; last = d; }
-      rows.push_back({idx[k], y, rowH, ""});
+      rows.push_back({idx[j], y, rowH, ""});
       y += rowH;
     }
-    at = end;
+    at += k;
   }
   return max(1, pages);
 }
@@ -293,12 +258,9 @@ static int rowAt(int y) {  // the note index under y on the current page, or -1
 // ---------------------------------------------------------------- screens
 
 static String dateLine() {   // "Sunday\nNov 23": the day, then the date
-  time_t t = time(nullptr);
-  if (t < 1700000000) return "Time not set\n";
-  struct tm tm; localtime_r(&t, &tm);
-  static const char *DAYS[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-  static const char *MONTHS[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-  return String(DAYS[tm.tm_wday]) + "\n" + MONTHS[tm.tm_mon] + " " + tm.tm_mday;
+  if (!clockKnown()) return "Time not set\n";
+  time_t t = time(nullptr); struct tm tm; localtime_r(&t, &tm);
+  return String(weekday(tm.tm_wday)) + "\n" + monthShort(tm.tm_mon) + " " + tm.tm_mday;
 }
 static String batteryLine() { return now.battery ? String(now.percent) + "%" : String("--%"); }
 static String lockDrawn;   // the battery and the date the lock screen shows, for uiMinute
@@ -355,7 +317,7 @@ static void drawNote() {
   if (!n) { textCentre(W / 2, H / 2, F_S12, "Gone"); return; }
   String date = timeOf(n->created, true);
   text(24, BAR + 28, F_S9, date.c_str());
-  if (n->asked) iconBubble(24 + textW(F_S9, date.c_str()) + 12, BAR + 15);   // a chat note: the bubble beside the date
+  if (n->asked) iconBubble(W / 2 - 8, BAR + 15);   // a chat note: the bubble centred on the date line
   textRight(W - 24, BAR + 28, F_S9, costText(n->cost).c_str());
   int by = noteButtonsY(*n), top = BAR + 60;
   int per = max(1, (by - 16 - top) / 26 - (sayMsg.length() ? 1 : 0));
@@ -566,7 +528,10 @@ static void drawArchive() {
 
 static bool listeningDone;
 bool uiListeningDone() { if (listeningDone) return false; listeningDone = true; return true; }
+static String notice;   // a recording that failed: why, on the listening screen for a moment
+void uiNotice(const char *msg) { notice = msg; Screen keep = screen; screen = SCREEN_LISTENING; uiRender(false); screen = keep; notice = ""; delay(1800); }
 static void drawListening() {
+  if (notice.length()) { iconMic(W / 2, H / 2 - 60); textCentre(W / 2, H / 2 + 60, F_B18, notice.c_str()); return; }
   iconMic(W / 2, H / 2 - 60);
   textCentre(W / 2, H / 2 + 60, F_B18, listeningDone ? "Saving…" : "Listening…");
 }
@@ -636,7 +601,12 @@ static void keyboardResult(KbResult r) {
   if (r == KB_CHANGED) redrawSoon();
   else if (r == KB_CANCEL) uiGo(kbBack);
   else if (r == KB_DONE) {
-    if (kbPurpose == 1) { Note *n = notesFind(openId); if (n) { n->text = kb.text; n->modified = time(nullptr); notesSave(); } uiGo(SCREEN_NOTE); }
+    if (kbPurpose == 1) {   // an empty text leaves the note as it was (Delete is the way to remove it)
+      String t = kb.text; t.trim();
+      Note *n = notesFind(openId);
+      if (n && t.length()) { n->text = kb.text; n->modified = time(nullptr); notesSave(); }
+      uiGo(SCREEN_NOTE);
+    }
     else if (kbPurpose == 3) { String t = kb.text; t.trim(); if (t.length()) { Note &n = notesAdd(t, "", 0); uiOpenNote(n.id, 0); } else uiGo(SCREEN_NOTES); }
     else if (kbPurpose == 2) { if (kb.text.length() < 8) { kb.note = "A password has at least 8 characters"; uiRender(false); } else joinNetwork(joinSsid, kb.text, SCREEN_KEYBOARD); }
   }
@@ -675,7 +645,7 @@ void uiTap(int x, int y) {
     case SCREEN_NOTES: {
       if (leftIcon(x, y)) { uiLock(); break; }
       if (inFooter(y)) {
-        if (x < W / 2) { keyboardBegin(kb, "", "New note", "", 1000); kbPurpose = 3; kbBack = SCREEN_NOTES; uiGo(SCREEN_KEYBOARD); }
+        if (x < W / 2) { keyboardBegin(kb, "", "New note", "", KB_NOTE_MAX); kbPurpose = 3; kbBack = SCREEN_NOTES; uiGo(SCREEN_KEYBOARD); }
         else uiGo(SCREEN_SETTINGS);
         break;
       }
@@ -697,7 +667,7 @@ void uiTap(int x, int y) {
       if (disarm()) break;
       int third = (x - 24) / (THIRD + UI_GAP);
       if (row1 && third == 0) { notesPin(*n); uiRender(false); }
-      else if (row1 && third == 1 && !n->busy()) { keyboardBegin(kb, n->text, "Edit note", "", 1000); kbPurpose = 1; kbBack = SCREEN_NOTE; uiGo(SCREEN_KEYBOARD); }
+      else if (row1 && third == 1 && !n->busy()) { keyboardBegin(kb, n->text, "Edit note", "", max<int>(KB_NOTE_MAX, utf8Count(n->text.c_str()) + 200)); kbPurpose = 1; kbBack = SCREEN_NOTE; uiGo(SCREEN_KEYBOARD); }
       else if (row1 && third == 2 && !n->busy() && n->text.length()) { n->tidying = true; notesSave(); uiRender(false); }
       else if (foot && n->archived) { n->archived = false; n->modified = time(nullptr); notesSave(); uiGo(SCREEN_ARCHIVE); }
       else if (foot && !n->busy()) { n->archived = true; n->pinned = false; n->modified = time(nullptr); notesSave(); uiGo(SCREEN_NOTES); }
@@ -839,7 +809,8 @@ void uiSaveForSleep() {
   rtcPage = page; rtcLockFrom = lockFrom;
 }
 bool uiRestoreAfterSleep() {
-  if (rtcScreen < 0) return false;
+  if (rtcScreen < 0 || rtcScreen > SCREEN_ABOUT || rtcLockFrom < 0 || rtcLockFrom > SCREEN_ABOUT) return false;   // nothing kept, or not a screen
+  rtcOpenId[sizeof rtcOpenId - 1] = 0;
   screen = backFrom((Screen)rtcScreen); openId = rtcOpenId; page = rtcPage; lockFrom = backFrom((Screen)rtcLockFrom);
   if (lockFrom == SCREEN_LOCK) lockFrom = SCREEN_NOTES;
   if (screen == SCREEN_NOTE && !notesFind(openId)) screen = SCREEN_NOTES;

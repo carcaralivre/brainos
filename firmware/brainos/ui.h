@@ -17,12 +17,13 @@ void uiOpenNote(const String &id, int focus);   // open a note at the page holdi
 void uiOpenChat(Screen back);   // the passing chat, opened from `back`
 String uiOpenNoteId();          // the note on SCREEN_NOTE
 void uiSay(const char *msg);    // a line above the buttons of the note or the chat, until the next press
+void uiNotice(const char *msg); // a recording that failed: the reason, big, for a moment
 void uiSleeping(bool on);       // the lock screen shows the padlock (drawn before deep sleep)
 void uiMinute();                // once a minute: redraw the lock screen if the battery or the date changed
 void uiNotesChanged();
-bool uiKeyboardShown();
 // The geometry every screen shares: a 56 px top bar, 24 px side margins, buttons 52 px tall
 // with 16 px between them, the footer row 24 px from the bottom.
+static const int KB_NOTE_MAX = 4000;   // characters a note takes from the keyboard and from brain.local
 static const int UI_BAR = 56, UI_MARGIN = 24, UI_BTN = 52, UI_GAP = 16;
 static const int UI_FOOT_Y = 800 - UI_MARGIN - UI_BTN;
 static const int UI_HALF = (480 - 2 * UI_MARGIN - UI_GAP) / 2;   // a half-width button

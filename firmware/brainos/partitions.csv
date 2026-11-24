@@ -1,7 +1,8 @@
 # Sticky OS on the reTerminal Sticky's 32 MB flash (W25Q256).
 # nvs and otadata sit where the core's default_8MB put them, so settings
 # survive the move. Two 6 MB app slots for over-the-air updates
-# (ota.cpp), LittleFS for notes and photos, and a core dump at the end.
+# (ota.cpp), LittleFS for the notes and the recordings waiting to be
+# transcribed, and a core dump at the end.
 # LittleFS keeps the label "spiffs": LittleFS.begin() looks for that name.
 # Name,   Type, SubType,  Offset,   Size,
 nvs,      data, nvs,      0x9000,   0x5000,

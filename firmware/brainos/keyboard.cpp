@@ -12,38 +12,45 @@ bool redrawDue(uint32_t afterMs) {
 
 String fitted(const GFXfont *font, String s, int width) {
   if (textW(font, s.c_str()) <= width) return s;
-  while (s.length() > 1 && textW(font, (s + "...").c_str()) > width) s.remove(utf8Back(s.c_str(), s.length()));
-  return s + "...";
+  while (s.length() > 1 && textW(font, (s + "…").c_str()) > width) s.remove(utf8Back(s.c_str(), s.length()));
+  return s + "…";
 }
 
-// Lines of at most `width`, broken at spaces (a word too long for a line is cut). `starts`, when
-// given, gets each line's first byte in `s`, so a cursor can be placed.
-static std::vector<String> wrapInto(const GFXfont *font, const String &s, int width, std::vector<int> *starts) {
+// Lines of at most `width`, broken at spaces and at line breaks (a blank line stays a blank
+// line); a word too long for a line is cut. `starts`, when given, gets each line's first byte in
+// `s`, so a cursor or a page can be placed.
+std::vector<String> wrapText(const GFXfont *font, const String &s, int width, std::vector<int> *starts) {
   std::vector<String> lines;
   String line;
-  int from = 0, lineStart = 0;
+  int lineStart = 0;
   auto push = [&](const String &l, int at) { lines.push_back(l); if (starts) starts->push_back(at); };
-  while (from < (int)s.length()) {
-    int space = s.indexOf(' ', from), wordStart = from;
-    String word = s.substring(from, space < 0 ? s.length() : space);
-    from = space < 0 ? s.length() : space + 1;
-    String tryLine = line.length() ? line + " " + word : word;
-    if (textW(font, tryLine.c_str()) <= width) { if (!line.length()) lineStart = wordStart; line = tryLine; continue; }
-    if (line.length()) push(line, lineStart);
-    lineStart = wordStart;
-    while (textW(font, word.c_str()) > width) {
-      int n = word.length();
-      while (textW(font, word.substring(0, n).c_str()) > width) { int back = utf8Back(word.c_str(), n); if (back <= 0) break; n = back; }
-      push(word.substring(0, n), lineStart);
-      word = word.substring(n);
-      lineStart += n;
+  for (int from = 0; from <= (int)s.length();) {
+    int space = s.indexOf(' ', from), nl = s.indexOf('\n', from);
+    int end = space < 0 ? nl : nl < 0 ? space : min(space, nl);
+    if (end < 0) end = s.length();
+    String word = s.substring(from, end);
+    if (word.length()) {
+      String tryLine = line.length() ? line + " " + word : word;
+      if (textW(font, tryLine.c_str()) <= width) { if (!line.length()) lineStart = from; line = tryLine; }
+      else {
+        if (line.length()) push(line, lineStart);
+        lineStart = from;
+        while (textW(font, word.c_str()) > width) {
+          int n = word.length();
+          while (textW(font, word.substring(0, n).c_str()) > width) { int back = utf8Back(word.c_str(), n); if (back <= 0) break; n = back; }
+          push(word.substring(0, n), lineStart);
+          word = word.substring(n);
+          lineStart += n;
+        }
+        line = word;
+      }
     }
-    line = word;
+    if (end < (int)s.length() && s[end] == '\n') { push(line, line.length() ? lineStart : end); line = ""; lineStart = end + 1; }
+    else if (end >= (int)s.length()) { if (line.length() || lines.empty() || s.endsWith("\n")) push(line, line.length() ? lineStart : end); break; }
+    from = end + 1;
   }
-  if (line.length()) push(line, lineStart);
   return lines;
 }
-std::vector<String> wrapped(const GFXfont *font, const String &s, int width) { return wrapInto(font, s, width, nullptr); }
 
 enum KeyCode { K_SHIFT = 1, K_BACK, K_LAYER, K_MORE, K_LEFT, K_RIGHT };
 struct KeyBox { int16_t x, y, w, h; uint16_t code; };
@@ -110,7 +117,7 @@ static void keyboardField(Keyboard &kb, int x, int y, int w, int h) {
   const int LINE = 30, tx = x + 14, tw = w - 32;
   int maxLines = max(1, (h - 10) / LINE), top = maxLines == 1 ? y + (h - LINE) / 2 : y + 6;
   std::vector<int> starts;
-  std::vector<String> lines = wrapInto(f, kb.text, tw, &starts);
+  std::vector<String> lines = wrapText(f, kb.text, tw, &starts);
   if (lines.empty()) { lines.push_back(""); starts.push_back(0); }
   int cl = 0;   // the cursor's line: the last one that starts at or before it
   for (size_t i = 0; i < starts.size(); i++) if (starts[i] <= kb.cursor) cl = i;

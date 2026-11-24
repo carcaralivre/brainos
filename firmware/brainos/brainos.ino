@@ -56,13 +56,14 @@ static bool keepRecording() {
 static void record(int how) {   // a RecKind (an int: the sketch's generated prototypes come before the enum)
   RecKind kind = (RecKind)how;
   Screen before = screen;
-  if (before == SCREEN_LISTENING || (kind == REC_DOWN && before == SCREEN_KEYBOARD)) return;
+  if (before == SCREEN_LISTENING || before == SCREEN_KEYBOARD) return;   // typing: a held button records nothing, so the text isn't lost
   Note *into = nullptr;   // Down in a note: append to it
   if (kind == REC_DOWN && before == SCREEN_NOTE) {
     into = notesFind(uiOpenNoteId());
     if (into && into->archived) into = nullptr;   // an archived note isn't added to: a passing chat instead
   }
   if (kind == REC_DOWN && ((into && into->busy()) || (before == SCREEN_CHAT && chat.waiting()))) { uiSay("Still transcribing the last one"); return; }
+  if (LittleFS.totalBytes() - LittleFS.usedBytes() < 1200000) { uiNotice("Storage full"); return; }   // a 30 s recording needs about 1 MB
   if (before == SCREEN_EXPORT) { exportDone(true); screenGhostReset(); }
   recording = kind;
   uiGo(SCREEN_LISTENING);
@@ -70,8 +71,11 @@ static void record(int how) {   // a RecKind (an int: the sketch's generated pro
   int secs = captureRecord(keepRecording, path, id);
   okConsume();
   lastActivity = millis();   // a recording counts as a touch: the sleep timer starts after it
-  if (!secs) {
+  if (!secs) {   // say why for a moment, then back where it was
     Serial.printf("capture: %s\n", captureError());
+    String why = captureError();
+    if (why == "Couldn't save the recording") why = "Storage full";
+    if (why.length()) uiNotice(why.c_str());
     uiGo(before == SCREEN_EXPORT ? SCREEN_SETTINGS : before);
     return;
   }

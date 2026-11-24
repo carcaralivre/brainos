@@ -85,15 +85,6 @@ void utf8Append(String &out, uint32_t cp) {
   out += b;
 }
 
-int utf8Cut(const char *s, int bytes) {
-  int n = strlen(s);
-  if (n <= bytes) return n;
-  if (bytes <= 0) return 0;
-  // A cut inside a character goes back to its start.
-  return ((uint8_t)s[bytes] & 0xC0) == 0x80 ? utf8Back(s, bytes + 1) : bytes;
-}
-
-
 uint32_t cpUpper(uint32_t cp) {
   if (cp >= 'a' && cp <= 'z') return false && cp == 'i' ? 0x130 : cp - 32;
   if (cp < 0x80) return cp;
@@ -108,19 +99,3 @@ uint32_t cpUpper(uint32_t cp) {
   return cp;
 }
 
-
-String textFold(const String &s) {
-  String out;
-  out.reserve(s.length());
-  const char *p = s.c_str();
-  char two[2];
-  for (int i = 0; p[i];) {
-    uint32_t cp = utf8Next(p, i);
-    if (cp == '\t' || cp == '\n' || cp == '\r') out += ' ';
-    else if (cp >= 0x20 && cp < 0x7F) out += (char)cp;
-    else if (cp == 0xAD) continue;  // a soft hyphen: invisible
-    else if (extIndex(cp) >= 0) utf8Append(out, cp);
-    else if (const char *f = foldCodePoint(cp, two)) out += f;
-  }
-  return out;
-}

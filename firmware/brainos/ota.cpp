@@ -42,7 +42,6 @@ static String bootTag;
 // What the last check found to install; the network task's own.
 static String binUrl, shaUrl, shaHex, binTag;
 static size_t binSize;
-static bool binHttpOk;    // plain http for the checksum and binary: never (GitHub is https)
 // NVS "brainos_ota": "try" is the version an install restarted into, so the next start can
 // say whether it kept running.
 static const char *const NVS_NS = "brainos_ota";
@@ -224,25 +223,21 @@ static String hostOf(const String &url) {
 // GET `url` into `sink`, following redirects by hand: HTTPClient's own
 // following keeps the connection to the first host. Returns the HTTP
 // status, or a negative HTTPClient error; `why` says what went wrong.
-static int httpGet(String url, bool allowHttp, bool api, Sink &sink, String &why) {
+static int httpGet(String url, bool api, Sink &sink, String &why) {
   for (int hop = 0; hop < 6; hop++) {
-    bool https = url.startsWith("https://");
-    if (!https && !(allowHttp && url.startsWith("http://"))) {
+    if (!url.startsWith("https://")) {   // the feed, the checksum and the binary: https only, redirects too
       why = "not an https address: " + hostOf(url);
       return -100;
     }
     WiFiClientSecure tls;
-    WiFiClient plain;
-    if (https) {
-      netTrust(tls);  // the public CA bundle: GitHub and its download hosts; an 8 s handshake
-      tls.setTimeout(15000);
-    }
+    netTrust(tls);  // the public CA bundle: GitHub and its download hosts; an 8 s handshake
+    tls.setTimeout(15000);
     HTTPClient http;
     http.setReuse(false);
     http.setTimeout(15000);
     http.setConnectTimeout(10000);
     http.setUserAgent(String("brainos/") + updVersion());
-    if (!http.begin(https ? (WiFiClient &)tls : plain, url)) {
+    if (!http.begin(tls, url)) {
       why = "bad address";
       return -101;
     }
@@ -367,33 +362,6 @@ static const char *closeOf(const char *p, const char *end) {
   return nullptr;
 }
 
-// Release notes for a small screen: the first few lines of the body, the
-// markdown marks taken off, as one paragraph of at most ~180 characters.
-static String notesFrom(const String &body) {
-  String out;
-  int from = 0, lines = 0;
-  while (from < (int)body.length() && lines < 4 && out.length() < 180) {
-    int nl = body.indexOf('\n', from);
-    String line = body.substring(from, nl < 0 ? body.length() : nl);
-    from = nl < 0 ? body.length() : nl + 1;
-    line.trim();
-    while (line.startsWith("#")) line.remove(0, 1);
-    if (line.startsWith("* ") || line.startsWith("- ")) line.remove(0, 2);
-    line.replace("**", "");
-    line.replace("`", "");
-    line.trim();
-    if (!line.length() || line.startsWith("<!--")) continue;
-    if (out.length()) out += strchr(".:!?", out[out.length() - 1]) ? " " : ". ";
-    out += line;
-    lines++;
-  }
-  out = textFold(out);  // the letters the fonts have; the rest folded or dropped
-  if (out.length() > 180) {
-    int cut = out.lastIndexOf(' ', 177);
-    out = out.substring(0, cut > 120 ? cut : utf8Cut(out.c_str(), 177)) + "...";
-  }
-  return out;
-}
 
 static bool isHex64(const String &s) {
   if (s.length() != 64) return false;
@@ -412,7 +380,7 @@ bool updCheck() {
 
   BufferSink json(FEED_MAX);
   String why;
-  int code = httpGet(feed, false, true, json, why);
+  int code = httpGet(feed, true, json, why);
   if (code != 200 && !(json.full && json.len)) {
     String status;
     if (code == 404) status = "No release published yet";
@@ -424,7 +392,7 @@ bool updCheck() {
     info.failed = true;
     info.checkedMs = millis();
     // 404: the feed answered, there is just nothing: forget an older answer.
-    if (code == 404) info.latest = "", info.notes = "", info.available = false;
+    if (code == 404) info.latest = "", info.available = false;
     return code > 0;
   }
   const char *b = json.buf, *end = json.buf + json.len;
@@ -455,7 +423,6 @@ bool updCheck() {
       p = close;
     }
   }
-  String body = stringOf(b, end, "body", 2000);
 
   long v[3];
   if (!tag.length() || !parseVersion(tag.c_str(), v)) {
@@ -480,12 +447,10 @@ bool updCheck() {
   shaUrl = shaAsset;
   shaHex = sha;
   binTag = tag;
-  binHttpOk = false;
   info.state = UPD_IDLE;
   info.status = status;
   info.failed = (newer || updIsDev()) && !url.length();
   info.latest = tag;
-  info.notes = notesFrom(body);
   info.available = installable;
   info.checkedMs = millis();
   return true;
@@ -543,7 +508,7 @@ bool updInstall() {
   String expect = shaHex, why;
   if (shaUrl.length()) {  // the release's own checksum file: "<hex>  brainos.bin"
     BufferSink file(256);
-    int code = httpGet(shaUrl, binHttpOk, false, file, why);
+    int code = httpGet(shaUrl, false, file, why);
     String text = file.buf ? String(file.buf) : String();
     text.trim();
     String hex = text.substring(0, 64);
@@ -554,7 +519,7 @@ bool updInstall() {
 
   if (!Update.begin(binSize, U_FLASH)) return installFailed("Couldn't start writing the update", Update.errorString());
   FlashSink sink(binSize);
-  int code = httpGet(binUrl, binHttpOk, false, sink, why);
+  int code = httpGet(binUrl, false, sink, why);
   if (code != 200 || sink.done != binSize) {
     Update.abort();
     if (code == 200) why = "got " + String(sink.done) + " of " + String(binSize) + " bytes";
@@ -580,7 +545,7 @@ bool updInstall() {
   }
   {
     info.state = UPD_RESTARTING;
-    info.status = "Restarting...";
+    info.status = "Restarting…";
   }
   Serial.flush();
   ESP.restart();

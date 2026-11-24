@@ -11,7 +11,6 @@ bool netUp();
 String netName();
 String netAddress();
 int netSignal();
-bool timeKnown();
 
 struct NetSeen { String ssid; int rssi; bool secure; };
 bool netScan(std::vector<NetSeen> &out, String &why);                       // blocking, a few seconds
