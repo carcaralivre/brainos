@@ -398,6 +398,7 @@ bool updCheck() {
 class FlashSink : public Sink {
  public:
   size_t expect, done = 0;
+  bool slow = false;
   mbedtls_sha256_context sha;
   explicit FlashSink(size_t e) : expect(e) {
     mbedtls_sha256_init(&sha);
@@ -411,8 +412,12 @@ class FlashSink : public Sink {
     }
     return true;
   }
+  uint32_t began = millis();
   bool put(const uint8_t *b, size_t n) override {
     if (done + n > expect) return why = "the download is longer than the release says", false;
+    // A weak signal can trickle for an hour with the board deaf to its buttons: four minutes, then give up.
+    if (millis() - began > 240000) return slow = true, why = "too slow: " + String(done) + " of " + String(expect) + " bytes in 4 minutes", false;
+    if ((done + n) * 10 / expect != done * 10 / expect) Serial.printf("update: %u%%\n", (unsigned)((done + n) * 10 / expect * 10));
     if (Update.write((uint8_t *)b, n) != n) return why = String("flash write: ") + Update.errorString(), false;
     mbedtls_sha256_update(&sha, b, n);
     done += n;
@@ -459,7 +464,7 @@ bool updInstall() {
   if (code != 200 || sink.done != binSize) {
     Update.abort();
     if (code == 200) why = "got " + String(sink.done) + " of " + String(binSize) + " bytes";
-    String status = sink.why.length() ? "The download doesn't match the release" : "The download didn't finish";
+    String status = sink.slow ? "Wi-Fi too weak: move closer and try again" : sink.why.length() ? "The download doesn't match the release" : "The download didn't finish";
     return installFailed(status, why);
   }
   uint8_t digest[32];
