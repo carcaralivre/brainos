@@ -788,12 +788,16 @@ void uiTap(int x, int y) {
         uiRender(false);
         break;
       }
+      if (installArmed && updInfo().available && uiFooterHit(x, y) == 1 && !updateInstalling()) {   // the second tap on Yes, install
+        installArmed = false; updateRequest(true);
+        break;
+      }
       if (disarm()) break;
       if (leftIcon(x, y)) uiGo(SCREEN_SETTINGS);
       else if (inFooter(y) && !updateInstalling()) {
         bool install = updInfo().available && uiFooterHit(x, y) == 1;
-        if (install && !installArmed) { installArmed = true; uiRender(false); }
-        else { installArmed = false; updateRequest(install); }
+        if (install) { installArmed = true; uiRender(false); }   // the first tap arms
+        else updateRequest(false);
       }
       break;
     default: break;
