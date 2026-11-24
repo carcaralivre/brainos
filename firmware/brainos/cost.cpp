@@ -9,8 +9,6 @@ static const char *LOG = "/costs.log";   // "YYYYMMDD micro" a line, oldest firs
 static const size_t KEEP_DAYS = 400;
 static std::vector<std::pair<uint32_t, uint32_t>> days;   // (YYYYMMDD, micro)
 
-static bool clockSet() { return clockKnown(); }
-
 static struct tm localDay(int daysAgo) {   // noon of that day, so a DST change can't move it to another date
   time_t t = time(nullptr);
   struct tm tm; localtime_r(&t, &tm);
@@ -45,17 +43,17 @@ static void saveLog() {
   else LittleFS.remove("/costs.tmp");
 }
 
-static String monthKey(const struct tm &tm) { char k[12]; snprintf(k, sizeof k, "m%04d%02d", tm.tm_year + 1900, tm.tm_mon + 1); return k; }
+static String monthKey(const struct tm &tm) { char k[24]; snprintf(k, sizeof k, "m%04d%02d", tm.tm_year + 1900, tm.tm_mon + 1); return k; }
 
 void costAdd(uint32_t micro) {
   if (!micro) return;
   Preferences p;
   if (p.begin("cost", false)) {
     p.putULong64("total", p.getULong64("total", 0) + micro);
-    if (clockSet()) { String k = monthKey(localDay(0)); p.putULong64(k.c_str(), p.getULong64(k.c_str(), 0) + micro); }
+    if (clockKnown()) { String k = monthKey(localDay(0)); p.putULong64(k.c_str(), p.getULong64(k.c_str(), 0) + micro); }
     p.end();
   }
-  if (!clockSet()) return;   // no date to put it under: only the total has it
+  if (!clockKnown()) return;   // no date to put it under: only the total has it
   uint32_t today = ymd(localDay(0));
   if (!days.empty() && days.back().first == today) days.back().second += micro;
   else days.push_back({today, micro});
@@ -88,18 +86,18 @@ static uint64_t between(uint32_t from, uint32_t to) {
   return s;
 }
 
-uint64_t costDaysAgo(int n) { if (!clockSet()) return 0; uint32_t d = ymd(localDay(n)); return between(d, d); }
+uint64_t costDaysAgo(int n) { if (!clockKnown()) return 0; uint32_t d = ymd(localDay(n)); return between(d, d); }
 
 static int sinceMonday() { struct tm t = localDay(0); return (t.tm_wday + 6) % 7; }
 uint64_t costWeeksAgo(int n) {
-  if (!clockSet()) return 0;
+  if (!clockKnown()) return 0;
   int start = sinceMonday() + 7 * n;
   return between(ymd(localDay(start)), ymd(localDay(start - 6 < 0 ? 0 : start - 6)));
 }
 
 static struct tm monthStart(int n) { struct tm t = localDay(0); t.tm_mday = 1; t.tm_mon -= n; t.tm_isdst = -1; mktime(&t); return t; }
 uint64_t costMonthsAgo(int n) {
-  if (!clockSet()) return 0;
+  if (!clockKnown()) return 0;
   Preferences p;
   if (!p.begin("cost", true)) return 0;
   uint64_t v = p.getULong64(monthKey(monthStart(n)).c_str(), 0);

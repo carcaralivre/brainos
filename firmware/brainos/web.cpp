@@ -79,7 +79,7 @@ static const char CSS[] PROGMEM =
   ".w{width:100%;justify-content:center}"
   "label{display:block;font:11px/16px Geist,-apple-system,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--tertiary);margin:14px 0 6px}label:first-child{margin-top:0}"
   "input[type=text],input[type=password],input[type=number],select,textarea{font:14px/20px Geist,-apple-system,sans-serif;width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--sunken);color:var(--fg);-webkit-appearance:none;appearance:none;outline:none}"
-  "input:focus,select:focus,textarea:focus{border-color:var(--input)}"
+  "input:focus,select:focus,textarea:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--input)}"
   "select{background:var(--sunken) url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23716b62' stroke-width='1.5'/%3E%3C/svg%3E\") no-repeat right 12px center;padding-right:32px}"
   "textarea{min-height:80px;line-height:20px}.check{display:flex;align-items:center;gap:10px;font:14px/20px Geist,-apple-system,sans-serif;text-transform:none;letter-spacing:0;color:var(--fg);margin:12px 0 0}.check input{width:18px;height:18px;margin:0;accent-color:var(--primary)}"
   ".pend{color:var(--muted)}.mute{color:var(--muted);margin:0 0 10px}a{color:var(--fg)}details{margin-top:8px}summary{cursor:pointer;color:var(--muted);list-style:none}summary::-webkit-details-marker{display:none}summary:before{content:'+ '}details[open] summary:before{content:'\\2212 '}"
@@ -100,7 +100,7 @@ static const char JS[] PROGMEM =
   "setTimeout(function(){delete b.dataset.armed;b.textContent=b.dataset.label;b.classList.remove('destructive')},3000)});";
 
 static String head(const String &title, const String &extra = "") {
-  return "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + html(title) + "</title><link rel='preconnect' href='https://fonts.googleapis.com'><link href='https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono&display=swap' rel='stylesheet'>" + extra + "<style>" + String(FPSTR(CSS)) + "</style></head><body><div class='wrap'>";
+  return "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + html(title) + "</title>" + extra + "<style>" + String(FPSTR(CSS)) + "</style></head><body><div class='wrap'>";
 }
 
 struct Zone { const char *label, *tz; };
@@ -127,10 +127,12 @@ static void noteCard(Out &p, const Note &n, bool first, const char *back) {
   else {
     p += "<button name='do' value='pin'>" + String(n.pinned ? "Unpin" : "Pin") + "</button>";
     if (!n.busy()) p += "<button name='do' value='archive'>Archive</button>";
-    if (!n.busy() && n.text.length()) p += "<button name='do' value='tidy'>Tidy</button>";
+    if (n.asking || n.tidying) p += "<button name='do' value='cancel'>Cancel</button>";   // the same third button as on the board
+    else if (!n.busy() && n.orig.length()) p += "<button name='do' value='original'>Original</button>";
+    else if (!n.busy() && n.text.length() && !n.asked) p += "<button name='do' value='tidy'>Tidy</button>";
   }
   p += "<button class='d' name='do' value='delete' data-arm='Yes, delete'>Delete</button></form></div>";
-  if (!n.archived && !n.busy()) p += "<details><summary>Edit</summary><form class='b' method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text' maxlength='" + String(KB_NOTE_MAX) + "'>" + html(n.text) + "</textarea><p></p><input class='o' type='submit' value='Save'></form></details>";
+  if (!n.archived && !n.busy()) p += "<details><summary>Edit</summary><form class='b' method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text' aria-label='Edit note' maxlength='" + String(KB_NOTE_MAX) + "'>" + html(n.text) + "</textarea><p></p><input class='o' type='submit' value='Save'></form></details>";
   p += "</div>";
 }
 
@@ -149,9 +151,13 @@ static void costRows(Out &p, const char *title, int count, uint64_t (*sum)(int),
 }
 
 static const size_t PAGE_NOTES = 50;   // the newest notes on the page; "Show all" for the rest
-static const char RELOAD[] PROGMEM =   // while something waits for the cloud: reload every 5 s, unless you are typing or a part is open
-  "<script>setInterval(function(){var a=document.activeElement;if(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))return;"
-  "if(document.querySelector('details[open],button[data-armed]'))return;location.reload()},5000)</script>";
+// The page asks every 5 s whether anything changed (/state: a few bytes, and not counted as using the
+// board, so an open tab never keeps it awake) and reloads when it did, unless you are typing or a part is open.
+static String stateNow() { return String(notesVersion()) + "." + sttProblem().length() + "." + notesPending(); }
+static const char RELOAD[] PROGMEM =
+  "setInterval(function(){var a=document.activeElement;if(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))return;"
+  "if(document.querySelector('details[open],button[data-armed]'))return;"
+  "fetch('/state').then(function(r){return r.ok?r.text():V}).then(function(t){if(t!==V)location.reload()}).catch(function(){})},5000)</script>";
 
 static void sendPage(const String &msg) {
   String name = cfg::str("device.name");
@@ -168,9 +174,9 @@ static void sendPage(const String &msg) {
   p += sttConfigured() ? "<span class='chip'>OpenRouter key set</span>" : "<span class='chip warn'>No OpenRouter key</span>";
   p += "<span class='chip'>" + String(VERSION) + "</span></div>";
   if (msg.length()) p += "<div class='msg'>" + html(msg) + "</div>";
-  if (strlen(sttLastError())) p += "<p class='pend'>Last transcription problem: " + html(sttLastError()) + "</p>";
+  if (strlen(sttLastError())) p += "<p class='pend'>Last problem with OpenRouter: " + html(sttLastError()) + "</p>";
 
-  p += "<div class='card'><h2>New note</h2><form class='b' method='post' action='/new'><textarea name='text' placeholder='Type a note' maxlength='" + String(KB_NOTE_MAX) + "'></textarea><p></p><input class='p' type='submit' value='Save note'></form></div>";
+  p += "<div class='card'><h2>New note</h2><form class='b' method='post' action='/new'><textarea name='text' aria-label='New note' placeholder='Type a note' maxlength='" + String(KB_NOTE_MAX) + "'></textarea><p></p><input class='p' type='submit' value='Save note'></form></div>";
 
   p += "<div class='card'><h2>Notes · " + String(idx.size()) + (pend ? ", " + String(pend) + " waiting" : String()) + "</h2>";
   if (idx.empty()) p += "<p class='mute'>None yet. Hold OK on the board and speak.</p>";
@@ -184,7 +190,7 @@ static void sendPage(const String &msg) {
 
   p += "<div class='card'><h2>Export</h2><p class='mute'>On the board, Settings → Export shows the notes as QR codes. Open the QR reader (button at the top), tap Scan and point the camera at the board; when the reader has every part, tap Archive all on the board.</p>";
   int fresh = 0;
-  for (int i : idx) if (all[i].text.length() && !all[i].busy()) fresh++;   // a note still waiting for the cloud stays for the next export
+  for (int i : idx) if (notesExportable(all[i])) fresh++;
   p += "<p class='mute'>Or export here: " + String(fresh) + " note" + (fresh == 1 ? "" : "s") + " as a Markdown file" + (cfg::flag("export.archive") ? ", which moves them to the Archive" : "") + ".</p><div class='row'>";
   if (fresh) p += "<form method='post' action='/export' onsubmit='setTimeout(function(){location.href=\"/\"},1500)'><input class='o' type='submit' value='Export these notes (.md)'></form>";
   p += "<a class='btn o' href='/notes.md'>All notes (.md)</a><a class='btn o' href='/notes.json'>JSON</a>" + (arch ? "<a class='btn o' href='/archive'>Archive · " + String(arch) + "</a>" : String()) + "</div></div>";
@@ -196,32 +202,32 @@ static void sendPage(const String &msg) {
     p += "<div class='net" + String(i == 0 ? " first" : "") + "'><b>" + html(nets[i].ssid) + "</b><form method='post' action='/wifi'><input type='hidden' name='do' value='forget'><input type='hidden' name='ssid' value='" + html(nets[i].ssid) + "'><button class='d' data-arm='Yes, forget'>Forget</button></form></div>";
   }
   if (nets.empty()) p += "<p class='mute'>No saved networks.</p>";
-  p += "<details><summary>Add a network</summary><form class='b' method='post' action='/wifi'><input type='hidden' name='do' value='add'><label>Network name</label><input type='text' name='ssid' autocapitalize='off' autocorrect='off'><label>Password (empty for an open network)</label><input type='password' name='pass' autocomplete='off'><p></p><input class='o' type='submit' value='Save network'></form></details></div>";
+  p += "<details><summary>Add a network</summary><form class='b' method='post' action='/wifi'><input type='hidden' name='do' value='add'><label for='ssid'>Network name</label><input type='text' id='ssid' name='ssid' autocapitalize='off' autocorrect='off'><label for='pass'>Password (empty for an open network)</label><input type='password' id='pass' name='pass' autocomplete='off'><p></p><input class='o' type='submit' value='Save network'></form></details></div>";
 
   p += "<div class='card'><h2>Settings</h2><form class='b' method='post' action='/settings'><input type='hidden' name='boxes' value='1'>";
-  p += "<label>OpenRouter API key</label><div class='row' style='margin-bottom:6px'>" + String(sttConfigured() ? "<span class='mute' style='margin:0'>Set. Paste a new one below to replace it</span>" : "<span class='mute' style='margin:0;color:var(--destructive)'>Not set. Recordings wait until a key is set</span>") + "</div><input type='password' name='key' placeholder='sk-or-…' autocomplete='off'>";
+  p += "<label for='key'>OpenRouter API key</label><div class='row' style='margin-bottom:6px'>" + String(sttConfigured() ? "<span class='mute' style='margin:0'>Set. Paste a new one below to replace it</span>" : "<span class='mute' style='margin:0;color:var(--destructive)'>Not set. Recordings wait until a key is set</span>") + "</div><input type='password' id='key' name='key' placeholder='sk-or-…' autocomplete='off'>";
   String model = cfg::str("stt.model");
-  p += "<label>Transcription model</label><select name='model'>";
+  p += "<label for='model'>Transcription model</label><select id='model' name='model'>";
   bool known = false;
   for (const char *m : MODELS) { p += option(m, m, model); known |= model == m; }
   if (!known) p += option(model, model, model);
   p += "</select>";
-  p += "<label>Transcription style: how to write, and names or words it should know (a hint, best with an example)</label><textarea name='prompt' placeholder='Tudo em minúsculas, sem ponto final. Nomes: BrainOS, Olívia. Exemplo: comprar café e leite'>" + html(cfg::str("stt.prompt")) + "</textarea>";
+  p += "<label for='prompt'>Transcription style: how to write, and names or words it should know (a hint, best with an example)</label><textarea id='prompt' name='prompt' placeholder='Tudo em minúsculas, sem ponto final. Nomes: BrainOS, Olívia. Exemplo: comprar café e leite'>" + html(cfg::str("stt.prompt")) + "</textarea>";
   String ask = cfg::str("ask.model");
-  p += "<label>Assistant model (hold Up to record a question; the answer goes into the note)</label><select name='askmodel'>";
+  p += "<label for='askmodel'>Assistant model (hold Up to record a question; the answer goes into the note)</label><select id='askmodel' name='askmodel'>";
   known = false;
   for (const char *m : ASK_MODELS) { p += option(m, m, ask); known |= ask == m; }
   if (!known) p += option(ask, ask, ask);
   p += "</select>";
-  p += "<label>Assistant instructions (keep answers short: the screen is small)</label><textarea name='askprompt'>" + html(cfg::str("ask.prompt")) + "</textarea>";
-  p += "<label>Device name</label><input type='text' name='name' value='" + html(cfg::str("device.name")) + "'>";
+  p += "<label for='askprompt'>Assistant instructions (keep answers short: the screen is small)</label><textarea id='askprompt' name='askprompt'>" + html(cfg::str("ask.prompt")) + "</textarea>";
+  p += "<label for='name'>Device name</label><input type='text' id='name' name='name' value='" + html(cfg::str("device.name")) + "'>";
   String tz = cfg::str("device.timezone");
-  p += "<label>Time zone</label><select name='tz'>";
+  p += "<label for='tz'>Time zone (a network the board hasn't seen before sets it again)</label><select id='tz' name='tz'>";
   known = false;
   for (const Zone &z : ZONES) { p += option(z.tz, z.label, tz); known |= tz == z.tz; }
   if (!known) p += option(tz, "Custom: " + tz, tz);
   p += "</select>";
-  p += "<label>On battery, sleep after this many minutes without a touch or a button (Wi-Fi and this page go off; OK wakes it)</label><input type='number' name='sleep' min='1' max='1440' value='" + String(cfg::num("sleep.min")) + "'>";
+  p += "<label for='sleep'>On battery, sleep after this many minutes without a touch or a button (Wi-Fi and this page go off; OK wakes it)</label><input type='number' id='sleep' name='sleep' min='1' max='1440' value='" + String(cfg::num("sleep.min")) + "'>";
   p += "<label class='check'><input type='checkbox' name='archive' " + String(cfg::flag("export.archive") ? "checked" : "") + "> Archive notes after exporting</label>";
   p += "<p></p><input class='o' type='submit' value='Save settings'></form>";
   p += "<h2 style='margin-top:20px'>Costs</h2><p class='mute'>What OpenRouter charged for transcriptions and answers (a transcription it doesn't report is priced by its length). Deleting a note keeps its cost here.</p>";
@@ -234,21 +240,32 @@ static void sendPage(const String &msg) {
   p += "<div class='card'><h2>About</h2><p class='mute'>BrainOS " + String(VERSION) + " on " + html(name) + ". " + (u.checkedMs ? html(u.status) : String("Updates are checked only when you ask.")) + "</p><div class='row'><form method='post' action='/update'><button class='o' name='do' value='check'>Check for update</button>";
   if (u.available) p += "<button class='o' name='do' value='install' data-arm='Yes, install'>Install " + html(u.latest) + "</button>";
   p += "</form></div></div>";
-  p += "</div>" + undoToast("/") + "<script>" + String(FPSTR(JS)) + "</script>" + (pend ? String(FPSTR(RELOAD)) : String()) + "</body></html>";
+  p += "</div>" + undoToast("/") + "<script>" + String(FPSTR(JS)) + "</script><script>var V='" + stateNow() + "';" + String(FPSTR(RELOAD)) + "</body></html>";
   p.end();
 }
 
-static void handleRoot() { sendPage(""); }
+// A form's answer is a redirect to the page, with one line to show there: a reload never sends the form again.
+static String flash;
+static void handleRoot() { String m = flash; flash = ""; sendPage(m); }
 
 static void back(const char *where) {
   server.sendHeader("Location", where);
   server.send(303, "text/plain", "");
 }
 
+static String plain(String e) {   // a setting's error in the form's words
+  static const char *const NAMES[][2] = {{"stt.api_key", "The OpenRouter key"}, {"stt.model", "The transcription model"}, {"stt.prompt", "The transcription style"},
+    {"ask.model", "The assistant model"}, {"ask.prompt", "The assistant instructions"}, {"device.name", "The device name"}, {"device.timezone", "The time zone"}, {"sleep.min", "The minutes before sleep"}};
+  for (auto &n : NAMES) e.replace(n[0], n[1]);
+  e.replace(" bytes", " characters");
+  return e;
+}
+
 // Only the fields that came with the form change; checkboxes come as a set (boxes=1).
 static void handleSettings() {
-  String err;
-  if (server.arg("key").length()) cfg::setStr("stt.api_key", server.arg("key"), err);
+  String err, key = server.arg("key");
+  key.trim();   // a pasted key often brings a space or a line break
+  if (key.length()) cfg::setStr("stt.api_key", key, err);
   if (!err.length() && server.hasArg("model")) cfg::setStr("stt.model", server.arg("model"), err);
   if (!err.length() && server.hasArg("prompt")) { String t = server.arg("prompt"); t.replace("\r", ""); t.replace("\n", " "); t.trim(); cfg::setStr("stt.prompt", t, err); }
   if (!err.length() && server.hasArg("askmodel")) cfg::setStr("ask.model", server.arg("askmodel"), err);
@@ -257,23 +274,25 @@ static void handleSettings() {
   if (!err.length() && server.hasArg("tz") && cfg::setStr("device.timezone", server.arg("tz"), err)) { setenv("TZ", server.arg("tz").c_str(), 1); tzset(); }
   if (!err.length() && server.arg("sleep").length()) cfg::setNum("sleep.min", server.arg("sleep").toInt(), err);
   if (!err.length() && server.hasArg("boxes")) cfg::setFlag("export.archive", server.hasArg("archive"), err);
+  sttRetry();   // a new key or model: what was refused goes out again
   uiNotesChanged();
-  sendPage(err.length() ? "Not saved: " + err : "Saved");
+  flash = err.length() ? "Not saved: " + plain(err) + ". The fields above it were saved." : "Saved";
+  back("/");
 }
 
 static void handleWifi() {
   std::vector<WifiCred> nets = cfg::wifiNetworks();
   String d = server.arg("do"), ssid = server.arg("ssid"), err, msg;
   if (d == "forget") {
-    for (size_t i = 0; i < nets.size(); i++) if (nets[i].ssid == ssid) nets.erase(nets.begin() + i--);
-    msg = cfg::setWifi(nets, err) ? "Forgot " + ssid : "Not saved: " + err;
+    msg = cfg::setWifi(cfg::wifiWithout(ssid), err) ? "Forgot " + ssid : "Not saved: " + err;
   } else if (d == "add") {
-    for (size_t i = 0; i < nets.size(); i++) if (nets[i].ssid == ssid) nets.erase(nets.begin() + i--);
+    nets = cfg::wifiWithout(ssid);
     nets.push_back({ssid, server.arg("pass")});
     msg = cfg::setWifi(nets, err) ? "Saved " + ssid + ": the board joins it when its current network is out of reach" : "Not saved: " + err;
   }
   uiNotesChanged();
-  sendPage(msg);
+  flash = msg;
+  back("/");
 }
 
 static const char *TOO_LONG = "Not saved: a note holds at most 4000 characters";
@@ -287,11 +306,16 @@ static void handleNote() {
     else if (d == "pin" && !n->archived) notesPin(*n);
     else if (d == "archive" && !n->busy()) { undoStart("Archived", false); undoNotes.push_back(*n); n->archived = true; n->pinned = false; notesSave(); }
     else if (d == "restore") { n->archived = false; notesSave(); }
-    else if (d == "tidy" && !n->archived && !n->busy() && n->text.length()) { n->tidying = true; notesSave(); }
+    else if (d == "tidy" && !n->archived && !n->busy() && n->text.length() && !n->asked) { n->tidying = true; notesSave(); }
+    else if (d == "cancel" && (n->asking || n->tidying)) {   // an answer on its way is dropped
+      if (n->asking) n->text += "\n\n(no answer: cancelled)";
+      n->asking = n->tidying = false; n->modified = time(nullptr); notesSave();
+    }
+    else if (d == "original" && !n->busy() && n->orig.length()) { n->text = n->orig; n->orig = ""; n->modified = time(nullptr); notesSave(); }
     else if (d == "edit" && !n->archived && !n->busy()) {
       String t = server.arg("text"); t.trim();
-      if (tooLong(t)) { sendPage(TOO_LONG); return; }
-      if (t.length()) { n->text = t; n->modified = time(nullptr); notesSave(); }
+      if (tooLong(t)) { flash = TOO_LONG; back("/"); return; }
+      if (t.length() && t != n->text) { n->text = t; n->orig = ""; n->modified = time(nullptr); notesSave(); }   // edited: the text before Tidy no longer undoes it
     }
   }
   uiNotesChanged();
@@ -300,7 +324,7 @@ static void handleNote() {
 
 static void handleNew() {
   String t = server.arg("text"); t.trim();
-  if (tooLong(t)) { sendPage(TOO_LONG); return; }
+  if (tooLong(t)) { flash = TOO_LONG; back("/"); return; }
   if (t.length()) notesAdd(t, "", 0);
   uiNotesChanged();
   back("/");
@@ -319,7 +343,7 @@ static String item(const Note &n, bool showArchived) {
 static void handleExport() {
   auto &all = notesAll();
   std::vector<int> idx;
-  for (int i : notesSorted(0, false)) if (all[i].text.length() && !all[i].busy()) idx.push_back(i);   // a note still waiting for the cloud stays for the next export
+  for (int i : notesSorted(0, false)) if (notesExportable(all[i])) idx.push_back(i);
   bool archive = cfg::flag("export.archive");
   if (archive && !idx.empty()) undoStart("Exported and archived", false);
   server.sendHeader("Content-Disposition", "attachment; filename=brainos-export.md");
@@ -402,10 +426,21 @@ static bool fromThisPage() {
   return true;   // no browser around it (a script on the network): nothing to check against
 }
 
-// Every request: the board stays awake while the page is in use; a change must come from this page.
-static void route(const char *path, HTTPMethod method, void (*fn)()) {
-  server.on(path, method, [method, fn] {
-    lastActivity = millis();
+// The board answers to its own names only (brain.local, brain, its address): under any other
+// name the request comes from a page elsewhere that was pointed at the board to read it.
+static bool ourName() {
+  String h = server.hostHeader();
+  h.toLowerCase();
+  if (h.endsWith(":80")) h.remove(h.length() - 3);
+  if (h.endsWith(".")) h.remove(h.length() - 1);
+  return h == "brain.local" || h == "brain" || h == netAddress();
+}
+
+// Every request: the board stays awake while the page is in use (`counts`); a change must come from this page.
+static void route(const char *path, HTTPMethod method, void (*fn)(), bool counts = true) {
+  server.on(path, method, [method, fn, counts] {
+    if (!ourName()) { server.send(403, "text/plain", "Open http://brain.local"); return; }
+    if (counts) lastActivity = millis();
     if (method == HTTP_POST && !fromThisPage()) { server.send(403, "text/plain", "Only the page at brain.local can change the board"); return; }
     fn();
   });
@@ -425,6 +460,7 @@ void webBegin() {
   route("/archive", HTTP_GET, handleArchive);
   route("/notes.md", HTTP_GET, handleMd);
   route("/notes.json", HTTP_GET, handleJson);
+  route("/state", HTTP_GET, [] { server.send(200, "text/plain", stateNow()); }, false);
   server.onNotFound([] { server.send(404, "text/plain", "Not here"); });
 }
 

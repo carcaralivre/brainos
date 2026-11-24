@@ -194,6 +194,11 @@ String str(const char *name) {
 long num(const char *name) { return str(name).toInt(); }
 bool flag(const char *name) { return str(name) == "true"; }
 std::vector<WifiCred> wifiNetworks() { Locked l; return wifi; }
+std::vector<WifiCred> wifiWithout(const String &ssid) {
+  std::vector<WifiCred> out;
+  for (auto &w : wifiNetworks()) if (w.ssid != ssid) out.push_back(w);
+  return out;
+}
 
 static bool put(const char *name, CfgType type, const String &text, String &err) {
   int i = indexOf(name);

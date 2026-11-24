@@ -52,7 +52,7 @@ bool exportStart() {
   char b[8]; snprintf(b, sizeof(b), "%04x", (unsigned)(esp_random() & 0xFFFF)); batch = b;
   auto &all = notesAll();
   std::vector<int> idx;
-  for (int i : notesSorted(0, false)) if (!all[i].busy() && all[i].text.length()) idx.push_back(i);   // the list, oldest first; a note still waiting for the cloud stays for the next export
+  for (int i : notesSorted(0, false)) if (notesExportable(all[i])) idx.push_back(i);   // the list, oldest first; a note still waiting for the cloud stays for the next export
   if (idx.empty()) return false;
   String head = "{\"v\":1,\"b\":\"" + batch + "\",\"i\":I,\"n\":N,\"dev\":" + pj::esc(cfg::str("device.name")) + ",\"notes\":[";
   // Every part the same size: split the notes into n parts of about equal bytes, then pad the
@@ -77,7 +77,7 @@ bool exportStart() {
   size_t target = total / n + 1;
   String cur;
   for (auto &j : jsons) {
-    if (cur.length() && (cur.length() + 1 + j.length() > target && k < n - 1 || cur.length() + 1 + j.length() > room)) { parts.push_back(cur); cur = ""; k++; }
+    if (cur.length() && ((cur.length() + 1 + j.length() > target && k < n - 1) || cur.length() + 1 + j.length() > room)) { parts.push_back(cur); cur = ""; k++; }
     cur += (cur.length() ? "," : "") + j;
   }
   if (cur.length()) parts.push_back(cur);

@@ -28,6 +28,7 @@ String str(const char *name);
 long num(const char *name);
 bool flag(const char *name);
 std::vector<WifiCred> wifiNetworks();
+std::vector<WifiCred> wifiWithout(const String &ssid);   // the saved networks, less that one
 
 // Checked, written at once, live at once. false: `err` says what was wrong.
 bool setStr(const char *name, const String &value, String &err);

@@ -98,6 +98,6 @@ String tidyBodyFor(const String &text) {
   String sys = "You tidy a note that was dictated and transcribed. Fix punctuation and capitals, and remove filler words, "
                "hesitations and false starts (like um, uh, tipo, né, então, assim, quer dizer), without changing the meaning, "
                "the wording or the language. Keep the paragraphs and line breaks. Reply with the tidied note only.";
-  return "{\"model\":" + pj::esc(cfg::str("ask.model")) + ",\"max_tokens\":1500,\"usage\":{\"include\":true},\"messages\":[{\"role\":\"system\",\"content\":" +
+  return "{\"model\":" + pj::esc(cfg::str("ask.model")) + ",\"max_tokens\":4000,\"usage\":{\"include\":true},\"messages\":[{\"role\":\"system\",\"content\":" +
          pj::esc(sys) + "},{\"role\":\"user\",\"content\":" + pj::esc(text) + "}]}";
 }

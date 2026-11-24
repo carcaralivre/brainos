@@ -25,7 +25,6 @@ bool parse(const char *s, size_t len, Val &out);
 bool member(const Val &obj, const char *key, Val &out);
 // arr[i]; false past the end.
 bool at(const Val &arr, size_t i, Val &out);
-size_t size(const Val &arrOrObj);
 
 // Typed reads; false if the type doesn't match. str() decodes escapes,
 // \uXXXX included (surrogate pairs too), into UTF-8.

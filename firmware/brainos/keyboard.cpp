@@ -97,8 +97,8 @@ static int keyboardKeys(const Keyboard &kb, int keysY, KeyBox *out) {
   return n;
 }
 
-void keyboardBegin(Keyboard &kb, const String &text, const char *label, const char *hint, int maxLen) {
-  kb.text = text; kb.label = label; kb.hint = hint; kb.note = ""; kb.cursor = text.length();
+void keyboardBegin(Keyboard &kb, const String &text, const char *label, int maxLen) {
+  kb.text = text; kb.label = label; kb.note = ""; kb.cursor = text.length();
   kb.layer = 0; kb.shift = text.length() ? 0 : 1; kb.shiftAt = 0; kb.maxLen = maxLen;
 
 }
@@ -127,7 +127,6 @@ static void keyboardField(Keyboard &kb, int x, int y, int w, int h) {
   if (cl < first) first = cl;
   for (int i = first; i < (int)lines.size() && i < first + maxLines; i++) text(tx, top + (i - first) * LINE + 21, f, lines[i].c_str());
   int baseline = top + (cl - first) * LINE + 21, cx = tx + textW(f, before.c_str()) + (before.length() ? 1 : 0);
-  if (!kb.text.length()) text(tx + 8, baseline, f, fitted(f, kb.hint, tw - 8).c_str());
   canvas->fillRect(cx, baseline - 19, 3, 25, INK);
 }
 

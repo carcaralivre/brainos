@@ -9,12 +9,12 @@ Built on [Sticky OS](https://github.com/Sticky-OS/sticky-os) (MIT): its screen, 
 - **Two states**: awake, Wi-Fi is on, recordings and questions go out, and `brain.local` answers. Asleep, everything is off and the lock screen shows a small padlock; only OK wakes it. On battery it sleeps 3 minutes after the last touch or button (a setting on `brain.local`); plugged in, never. At midnight it wakes for a moment to change the date.
 - **Lock screen**: battery, the weekday and the date, up to three pinned notes, how many notes there are. A tap opens the list, a tap on a pinned note opens it, OK goes back to where you were.
 - **Hold a button** (anywhere):
-  - **OK**: a new note. Speak, release; the note opens and its text arrives when there is Wi-Fi and an OpenRouter key.
+  - **OK**: a new note. Speak, release; the note opens and its text arrives when there is Wi-Fi and an OpenRouter key. A recording holds 30 seconds (the screen says when that is reached) and is never thrown away because the service refused it: the note says why it waits (no Wi-Fi, no key, no credit) and it goes out again when that changes.
   - **Up**: a new chat note: the question, then the assistant's answer (model and instructions on `brain.local`).
   - **Down**: in a note, a recording added at its end (in a chat note, the next question, with the conversation so far); anywhere else, a passing **Chat** about your notes, saved only if you tap *Save as note*.
-- **Notes**: grouped by day. Open one to pin it, edit it, *Tidy* it (the assistant fixes punctuation and drops filler words; the original is kept), archive or delete it. A long note scrolls by pages with Up/Down; a swipe sideways goes to the next note.
+- **Notes**: grouped by day. Open one to pin it, edit it, *Tidy* it (the assistant fixes punctuation and drops filler words; *Original* brings the text back), archive or delete it. *Cancel* stops waiting for an answer or for Tidy. A long note scrolls by pages with Up/Down; a swipe sideways goes to the next note.
 - **Costs**: each note shows what it cost (transcriptions and answers); the board's About and `brain.local` show the totals by day, week and month.
-- **brain.local**: a page on your network to paste the OpenRouter key, read, pin, tidy, archive and delete notes (with *Undo*), download them as Markdown, add Wi-Fi networks, and change settings. It refreshes itself while something waits for the cloud, keeps the board awake while you use it, and only takes changes from itself.
+- **brain.local**: a page on your network to paste the OpenRouter key, read, pin, tidy, archive and delete notes (with *Undo*), download them as Markdown, add Wi-Fi networks, and change settings. It reloads when the notes change, keeps the board awake while you use it (an open tab alone does not), answers only to its own name or address, and only takes changes from itself. Anyone on the same network can open it: there is no password.
 - **Export**: a loop of QR codes with the notes on the list (a long note goes in pieces, never cut); the [reader page](https://carcaralivre.github.io/brainos-reader/) on the phone reads them in any order. Format: [docs/qr-payload.md](docs/qr-payload.md).
 - **Archive**, **Settings** on the board (Wi-Fi with a scan and a keyboard, export, archive, about), **updates over Wi-Fi** from this repository's releases, with rollback.
 
@@ -37,7 +37,7 @@ firmware/build.sh build   # into ~/.cache/brainos-build
 firmware/build.sh         # build and flash over USB
 ```
 
-Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/tools/drive.py <port> shot:file.png` saves it as PNG and runs any other commands in order), `notes`, `note add <text>`, `wifi`, `wifi add <ssid> <password>`, `time YYYY-MM-DD HH:MM`, `tap x y`, `ok`, `move n`, `lock`, `sleep`.
+Serial commands at 115200 (for development): `shot` (a screenshot; `firmware/tools/drive.py <port> shot:file.png` saves it as PNG and runs any other commands in order), `notes`, `note add <text>`, `wifi`, `wifi add <ssid> <password>`, `time YYYY-MM-DD HH:MM`, `tap x y`, `ok`, `move n`, `lock`, `sleep`, `stats`, `fs`, `sensors`, `nettest`, `wifi seen`, `wipe` (deletes every note).
 
 `spike/sticky-stt/` is the on-chip speech-to-text experiment that decided against local transcription ([docs/stt-spike.md](docs/stt-spike.md)). It is not part of the firmware.
 

@@ -7,3 +7,5 @@ void sttTick();                 // call from loop(): sends what waits when Wi-Fi
 bool sttRunning();
 const char *sttLastError();     // "" when the last job worked
 bool sttConfigured();           // a key is set
+String sttProblem();            // why nothing is going out: "waiting for Wi-Fi", no key, the last failure; "" when all is well
+void sttRetry();                // the settings changed: recordings the service refused are sent again

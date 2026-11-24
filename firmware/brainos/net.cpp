@@ -6,6 +6,7 @@ extern const char *const VERSION;
 #include <algorithm>
 #include <esp_sntp.h>
 #include "config.h"
+#include "dates.h"
 #include "notes.h"
 #include "rtc.h"
 #include "provjson.h"
@@ -18,11 +19,10 @@ static bool radioOn_;            // the radio was started
 static int tryIndex = -1;        // the saved network being tried, -1: none
 static uint32_t tryAt, backoffUntil;
 static bool wasUp, clockStarted, rtcSynced, mdnsOn;
-static String locatedOn;   // the network the time zone and language were last taken from
+RTC_DATA_ATTR static char locatedOn[33];   // the network the time zone and language were last taken from; kept across sleep, so a wake on the same network asks nothing
 static volatile uint8_t lastReason;
 
 bool netUp() { return WiFi.status() == WL_CONNECTED; }
-static bool timeKnown() { return time(nullptr) > 1700000000; }
 String netName() { return netUp() ? WiFi.SSID() : String(); }
 String netAddress() { return netUp() ? WiFi.localIP().toString() : String(); }
 int netSignal() { return netUp() ? WiFi.RSSI() : 0; }
@@ -55,9 +55,9 @@ static void startClock() {
 }
 
 // Where the board is, from its public address (ip-api.com, no key, nothing sent but the request):
-// the time zone follows every new network (travel), the language is filled in once, when it is empty.
+// the time zone follows a change of network (travel; one set by hand at brain.local stays until then), the language is filled in once, when it is empty.
 static void locate() {
-  if (locatedOn == WiFi.SSID()) return;
+  if (WiFi.SSID() == locatedOn) return;
   HTTPClient http; http.setTimeout(6000); http.setConnectTimeout(NET_CONNECT_MS);
   if (!http.begin("http://ip-api.com/json/?fields=status,countryCode,offset")) return;
   int code = http.GET();
@@ -68,7 +68,7 @@ static void locate() {
   if (!pj::parse(body.c_str(), body.length(), v) || !pj::member(v, "status", f) || !pj::str(f, status) || status != "success") { Serial.println("locate: no answer"); return; }
   if (pj::member(v, "countryCode", f)) pj::str(f, country);
   if (pj::member(v, "offset", f)) pj::num(f, offset);
-  locatedOn = WiFi.SSID();
+  strlcpy(locatedOn, WiFi.SSID().c_str(), sizeof locatedOn);
   // POSIX spells the offset backwards: UTC-3 is "<-03>3"; half hours become "<+0530>-5:30".
   long mins = offset / 60, a = labs(mins);
   char tz[24];
@@ -110,7 +110,7 @@ void netTick() {
   if (!up && wasUp) Serial.printf("wifi: dropped (reason %d)\n", lastReason);
   wasUp = up;
   if (up) {
-    if (clockStarted && !rtcSynced && timeKnown()) {
+    if (clockStarted && !rtcSynced && clockKnown()) {
       static bool fixed;
       if (!fixed) { fixed = true; notesFixClock(time(nullptr) - millis() / 1000); }   // notes made before the clock was known
       rtcFromSystem(); rtcSynced = true; Serial.println("rtc: set from the network");
@@ -254,19 +254,27 @@ static bool readLine(WiFiClientSecure &tls, String &line, uint32_t deadline) {
   return false;
 }
 
-int netPost(const char *host, const char *path, const String &headers, const uint8_t *body, size_t len, String &reply, uint32_t timeoutMs) {
+// 1 KB at a time: larger writes get the connection reset on this core.
+static bool sendAll(WiFiClientSecure &tls, const uint8_t *b, size_t len) {
+  size_t sent = 0;
+  while (sent < len) {
+    size_t w = tls.write(b + sent, min<size_t>(1024, len - sent));
+    if (!w) return false;
+    sent += w;
+    if ((sent & 0xFFFF) == 0) delay(1);
+  }
+  return true;
+}
+
+int netPost(const char *host, const char *path, const String &headers, const uint8_t *body, size_t len, String &reply, uint32_t timeoutMs, const String &before, const String &after) {
   reply = "";
   WiFiClientSecure tls;
   netTrust(tls);
   if (!tls.connect(host, 443, 15000)) { reply = "connect failed"; return HTTPC_ERROR_CONNECTION_REFUSED; }
-  String h = String("POST ") + path + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: brainos/" + VERSION + "\r\nConnection: close\r\nAccept: application/json\r\n" + headers + "Content-Length: " + String(len) + "\r\n\r\n";
+  String h = String("POST ") + path + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: brainos/" + VERSION + "\r\nConnection: close\r\nAccept: application/json\r\n" + headers + "Content-Length: " + String(before.length() + len + after.length()) + "\r\n\r\n";
   if (tls.write((const uint8_t *)h.c_str(), h.length()) != h.length()) { tls.stop(); reply = "header send failed"; return HTTPC_ERROR_SEND_HEADER_FAILED; }
-  size_t sent = 0;
-  while (sent < len) {   // 1 KB at a time: larger writes get the connection reset on this core
-    size_t w = tls.write(body + sent, min<size_t>(1024, len - sent));
-    if (!w) { tls.stop(); reply = "body send failed"; return HTTPC_ERROR_SEND_PAYLOAD_FAILED; }
-    sent += w;
-    if ((sent & 0xFFFF) == 0) delay(1);
+  if (!sendAll(tls, (const uint8_t *)before.c_str(), before.length()) || !sendAll(tls, body, len) || !sendAll(tls, (const uint8_t *)after.c_str(), after.length())) {
+    tls.stop(); reply = "body send failed"; return HTTPC_ERROR_SEND_PAYLOAD_FAILED;
   }
   uint32_t deadline = millis() + timeoutMs;
   String line;

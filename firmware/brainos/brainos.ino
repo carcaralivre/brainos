@@ -9,6 +9,7 @@
 #include "capture.h"
 #include "chat.h"
 #include "cost.h"
+#include "dates.h"
 #include "keyboard.h"
 #include "config.h"
 #include "export.h"
@@ -68,7 +69,7 @@ static void record(int how) {   // a RecKind (an int: the sketch's generated pro
   recording = kind;
   uiGo(SCREEN_LISTENING);
   String path, id;
-  int secs = captureRecord(keepRecording, path, id);
+  int secs = captureRecord(keepRecording, uiListeningFull, path, id);
   okConsume();
   lastActivity = millis();   // a recording counts as a touch: the sleep timer starts after it
   if (!secs) {   // say why for a moment, then back where it was
@@ -121,7 +122,7 @@ static void updateTick() {
 // date on the lock screen; 0 while the time is unknown.
 static uint32_t secsToMidnight() {
   time_t t = time(nullptr);
-  if (t < 1700000000) return 0;
+  if (!clockKnown()) return 0;
   struct tm tm; localtime_r(&t, &tm);
   tm.tm_mday += 1; tm.tm_hour = 0; tm.tm_min = 0; tm.tm_sec = 30; tm.tm_isdst = -1;
   time_t next = mktime(&tm);

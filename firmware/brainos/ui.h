@@ -21,6 +21,12 @@ void uiNotice(const char *msg); // a recording that failed: the reason, big, for
 void uiSleeping(bool on);       // the lock screen shows the padlock (drawn before deep sleep)
 void uiMinute();                // once a minute: redraw the lock screen if the battery or the date changed
 void uiNotesChanged();
+void uiTextGrew(const String &noteId, int offset);   // the open note (or the chat, for "") grew at offset: show that page
+void uiListeningFull();         // the recording reached its 30 s: the listening screen says so
+// The sketch's side of Settings -> Update (brainos.ino).
+bool updateQueued();            // a check or install asked for, not started yet
+bool updateInstalling();        // the install is running on the loop (the screen cannot change)
+void updateRequest(bool install);
 // The geometry every screen shares: a 56 px top bar, 24 px side margins, buttons 52 px tall
 // with 16 px between them, the footer row 24 px from the bottom.
 static const int KB_NOTE_MAX = 4000;   // characters a note takes from the keyboard and from brain.local

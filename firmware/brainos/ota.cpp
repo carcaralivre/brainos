@@ -6,7 +6,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
-#include "config.h"
 #include "esp_heap_caps.h"
 #include "esp_ota_ops.h"
 #include "glyphs.h"
@@ -19,7 +18,7 @@ static String fmt(const char *f, ...) {
   return String(b);
 }
 
-#ifndef STICKY_VERSION  // upload.sh passes it: the tag in CI, dev-<commit> otherwise
+#ifndef STICKY_VERSION  // build.sh passes it: the tag in CI, dev-<commit> otherwise
 #define STICKY_VERSION dev-unknown
 #endif
 #define UPD_STR2(x) #x
@@ -35,11 +34,10 @@ extern "C" bool verifyRollbackLater() { return true; }
 
 static UpdInfo info;      // read and written on the loop task only
 static bool pending;      // this firmware boots on trial
-// updBegin() runs before the settings (and the language) are loaded, so
-// what it found is put in words when it's read (updInfo).
+// What updBegin() found at start-up, put in words when it's read (updInfo).
 static uint8_t bootNote;  // 1: updated to bootTag, 2: bootTag didn't start
 static String bootTag;
-// What the last check found to install; the network task's own.
+// What the last check found to install.
 static String binUrl, shaUrl, shaHex, binTag;
 static size_t binSize;
 // NVS "brainos_ota": "try" is the version an install restarted into, so the next start can
@@ -373,19 +371,17 @@ static bool isHex64(const String &s) {
 // ---------------------------------------------------------------- check
 
 bool updCheck() {
-  String feed = GITHUB_FEED;
-  const char *where = "GitHub";
   setStatus(UPD_CHECKING, "Checking…", false);
   Serial.println("update: checking GitHub");
 
   BufferSink json(FEED_MAX);
   String why;
-  int code = httpGet(feed, true, json, why);
+  int code = httpGet(GITHUB_FEED, true, json, why);
   if (code != 200 && !(json.full && json.len)) {
     String status;
     if (code == 404) status = "No release published yet";
-    else if (code == 403 || code == 429) status = (fmt("%s is busy (rate limit): try later", where));
-    else status = netFailText(where, code);
+    else if (code == 403 || code == 429) status = "GitHub is busy (rate limit): try later";
+    else status = netFailText("GitHub", code);
     Serial.printf("update: check failed: %s (%s)\n", why.c_str(), status.c_str());
     info.state = UPD_IDLE;
     info.status = status;

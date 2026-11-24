@@ -1,6 +1,5 @@
 #include "stt.h"
 #include <atomic>
-#include <HTTPClient.h>
 #include <LittleFS.h>
 #include <esp_heap_caps.h>
 #include <freertos/idf_additions.h>
@@ -10,6 +9,7 @@
 #include "notes.h"
 #include "chat.h"
 #include "cost.h"
+#include "ui.h"
 
 // A job: the WAV bytes (read by the loop; this task never touches flash), or a chat request
 // body built on the loop, and the answer.
@@ -23,23 +23,38 @@ static struct {
   String req;               // JOB_ASK / JOB_TIDY: the request body
   String text, error;
   uint32_t cost;            // millionths of a dollar
-  bool fatal;               // the service refused this for good: stop retrying it
+  bool fatal;               // an answer that will not get better (nothing heard, an empty answer): written into the note
+  bool skip;                // a recording the service refused: kept, and left alone until the settings change or the next start
+  bool cut;                 // the answer hit the length limit
   std::atomic<int> state;   // 0 idle, 1 running, 2 done; atomic so the strings above are visible to the other core
 } job;
 static TaskHandle_t worker;
-static String lastError;
+static String lastError;    // the last failure, for the page
+static String waitWhy;      // why everything is waiting: a failure that may get better (the network, the key, the credit)
 static uint32_t lastFailAt;
 static int failures;
 
 bool sttRunning() { return job.state == 1; }
 const char *sttLastError() { return lastError.c_str(); }
 bool sttConfigured() { return cfg::isSet("stt.api_key"); }
+String sttProblem() {
+  if (!netUp()) return "waiting for Wi-Fi";
+  if (!sttConfigured()) return "no OpenRouter key (set it at brain.local)";
+  if (failures && waitWhy.length()) return waitWhy + ", trying again";
+  return "";
+}
+void sttRetry() {   // the settings changed: what was refused gets another go
+  for (auto &n : notesAll()) n.stuck = "";
+  failures = 0; waitWhy = "";
+}
+// A refusal that may pass (the key, the credit, a limit, a timeout) waits and tries again; any other 4xx is about the request itself.
+static bool refused(int code) { return code >= 400 && code < 500 && code != 401 && code != 402 && code != 403 && code != 408 && code != 429; }
 
 static String logSafe(const String &s, int n) { String t = s.substring(0, n); t.replace("\n", " "); return t; }
 
-static int post(const char *path, const uint8_t *body, size_t len, const String &type, String &reply) {
+static int post(const char *path, const uint8_t *body, size_t len, const String &type, String &reply, const String &before = "", const String &after = "") {
   String headers = "Authorization: Bearer " + cfg::str("stt.api_key") + "\r\nHTTP-Referer: https://github.com/carcaralivre/brainos\r\nX-Title: BrainOS\r\nContent-Type: " + type + "\r\n";
-  return netPost("openrouter.ai", path, headers, body, len, reply, 90000);
+  return netPost("openrouter.ai", path, headers, body, len, reply, 90000, before, after);
 }
 
 // The cost OpenRouter reports in a reply (usage.cost, in dollars), in millionths; 0 when it says nothing.
@@ -54,10 +69,11 @@ static bool textOf(const String &reply, String &text, uint32_t &cost) {   // {"t
   cost = costOf(v);
   return true;
 }
-static bool answerOf(const String &reply, String &text, uint32_t &cost) {   // choices[0].message.content, usage.cost
-  pj::Val v, a, c, m, t;
+static bool answerOf(const String &reply, String &text, uint32_t &cost, bool &cut) {   // choices[0].message.content, finish_reason, usage.cost
+  pj::Val v, a, c, m, t, f; String why;
   if (!pj::parse(reply.c_str(), reply.length(), v) || !pj::member(v, "choices", a) || !pj::at(a, 0, c) || !pj::member(c, "message", m) || !pj::member(m, "content", t) || !pj::str(t, text)) return false;
   cost = costOf(v);
+  cut = pj::member(c, "finish_reason", f) && pj::str(f, why) && why == "length";
   return true;
 }
 
@@ -68,10 +84,10 @@ static void chatTask() {
   int code = post("/api/v1/chat/completions", (const uint8_t *)job.req.c_str(), job.req.length(), "application/json", reply);
   if (code != 200) {
     job.error = netFailText("OpenRouter", code);
-    job.fatal = code >= 400 && code < 500 && code != 429 && code != 401;
+    job.fatal = refused(code);
     if (reply.indexOf("model") >= 0 && code == 400) job.error = "OpenRouter doesn't know the assistant model";
     Serial.printf("ask: failed, %d: %s\n", code, logSafe(reply, 200).c_str());
-  } else if (!answerOf(reply, job.text, job.cost)) {
+  } else if (!answerOf(reply, job.text, job.cost, job.cut)) {
     job.error = "The assistant's answer couldn't be read";
     job.fatal = true;   // the same reply would come again: say so in the note instead of asking forever
     Serial.printf("ask: unreadable answer (%u bytes): %s\n", (unsigned)reply.length(), logSafe(reply, 120).c_str());
@@ -79,6 +95,8 @@ static void chatTask() {
     job.text.trim();
     Serial.printf("ask: answered in %lu ms, %lu micro-dollars: %s\n", (unsigned long)(millis() - start), (unsigned long)job.cost, logSafe(job.text, 80).c_str());
     if (!job.text.length()) { job.error = "The assistant sent an empty answer"; job.fatal = true; }
+    else if (job.cut && job.kind == JOB_TIDY) { job.error = "The note is too long to tidy"; job.fatal = true; }   // a cut text never replaces the note
+    else if (job.cut) job.text += " (cut short)";
   }
 }
 
@@ -90,23 +108,17 @@ static void sttTask() {
   if (prompt.length()) head += String("--") + BOUNDARY + "\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n" + prompt + "\r\n";   // style hints: case, punctuation, names
   head += String("--") + BOUNDARY + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.wav\"\r\nContent-Type: audio/wav\r\n\r\n";
   String tail = String("\r\n--") + BOUNDARY + "--\r\n";
-  size_t len = head.length() + job.len + tail.length();
-  uint8_t *body = (uint8_t *)heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
-  if (!body) { job.error = "No memory for the request"; return; }
-  memcpy(body, head.c_str(), head.length());
-  memcpy(body + head.length(), job.wav, job.len);
-  memcpy(body + head.length() + job.len, tail.c_str(), tail.length());
   uint32_t start = millis();
   String reply;
-  int code = post("/api/v1/audio/transcriptions", body, len, String("multipart/form-data; boundary=") + BOUNDARY, reply);
-  free(body);
+  int code = post("/api/v1/audio/transcriptions", job.wav, job.len, String("multipart/form-data; boundary=") + BOUNDARY, reply, head, tail);
   if (code != 200) {
     job.error = netFailText("OpenRouter", code);
-    job.fatal = code >= 400 && code < 500 && code != 429 && code != 401;   // a bad request or an unknown model will not get better; a key problem or a rate limit may
+    job.skip = refused(code);   // the recording is never thrown away over a refusal: it waits for a setting to change
     if (reply.indexOf("model") >= 0 && code == 400) job.error = "OpenRouter doesn't know the model";
     Serial.printf("stt: failed, %d: %s\n", code, logSafe(reply, 200).c_str());
   } else if (!textOf(reply, job.text, job.cost)) {
     job.error = "OpenRouter sent no text";
+    job.skip = true;   // asking again would be charged again
     Serial.printf("stt: no text: %s\n", logSafe(reply, 120).c_str());
   } else {
     job.text.trim();
@@ -120,7 +132,7 @@ static void workerTask(void *) {
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     if (job.state != 1) continue;
-    job.text = ""; job.error = ""; job.fatal = false; job.cost = 0;
+    job.text = ""; job.error = ""; job.fatal = job.skip = job.cut = false; job.cost = 0;
     if (job.kind == JOB_STT) sttTask(); else chatTask();
     job.state = 2;
   }
@@ -131,23 +143,21 @@ void sttBegin() {
   xTaskCreatePinnedToCoreWithCaps(workerTask, "stt", 20480, nullptr, 1, &worker, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
-extern void uiNotesChanged();
-extern void uiTextGrew(const String &noteId, int offset);   // the open note (or the chat, for "") grew at offset: show that page
-
 // A result, applied on the loop (which may write flash).
 static void apply() {
   free(job.wav); job.wav = nullptr;
   costAdd(job.cost);   // spent whether or not the note or chat is still there
   if (job.error.length()) {
-    lastError = job.error; lastFailAt = millis(); failures++;
+    lastError = job.error;
+    if (!job.fatal && !job.skip) { waitWhy = job.error; lastFailAt = millis(); failures++; }   // only a failure that may pass holds the others back
     Serial.printf("%s: %s\n", job.kind == JOB_STT ? "stt" : job.kind == JOB_ASK ? "ask" : "tidy", lastError.c_str());
-  } else { lastError = ""; failures = 0; }
+  } else { lastError = ""; waitWhy = ""; failures = 0; }
   bool ok = !job.error.length();
 
   if (!job.noteId.length()) {   // the passing chat
     if (job.chatGen != chat.gen) return;   // left behind: dropped
     chat.cost += job.cost;
-    if (job.kind == JOB_STT && (ok || job.fatal)) {
+    if (job.kind == JOB_STT && (ok || job.fatal || job.skip)) {   // the passing chat keeps nothing: a refused question is dropped
       LittleFS.remove(chat.audio);
       chat.audio = ""; chat.secs = 0;
       if (ok) { chat.turns.push_back(job.text); chat.asking = true; uiTextGrew("", chat.turns.size() - 1); }
@@ -165,24 +175,30 @@ static void apply() {
   if (!n) return;
   n->cost += job.cost;
   int at = -1;   // where the note grew
+  String said;   // a line for the open note
   if (job.kind == JOB_STT && (ok || job.fatal)) {
     LittleFS.remove(n->audio);
-    n->audio = ""; n->secs = 0;
+    n->audio = ""; n->secs = 0; n->stuck = "";
     String heard = ok ? job.text : "(not transcribed: " + job.error + ")";
     at = n->text.length() ? n->text.length() + 2 : 0;
     n->text = n->text.length() ? n->text + "\n\n" + heard : heard;
+    n->orig = "";   // the text moved on: the one before Tidy no longer undoes it
     n->asking = ok && n->asked;   // a question: the assistant's turn next
-  } else if (job.kind == JOB_ASK && (ok || job.fatal)) {
+  } else if (job.kind == JOB_STT) {
+    if (job.skip) n->stuck = job.error;   // the recording stays
+  } else if (job.kind == JOB_ASK && n->asking && (ok || job.fatal)) {   // not asking any more: cancelled meanwhile
     n->asking = false;
     at = n->text.length() + 2;
     n->text += "\n\n" + (ok ? chatAnswerText(job.text) : "(no answer: " + job.error + ")");
-  } else if (job.kind == JOB_TIDY && (ok || job.fatal)) {
+  } else if (job.kind == JOB_TIDY && n->tidying && (ok || job.fatal)) {
     n->tidying = false;
     if (ok) { if (!n->orig.length()) n->orig = n->text; n->text = job.text; at = 0; }
+    else said = "Tidy failed: " + job.error;
   }
   n->modified = time(nullptr);
   notesSave();
   if (at >= 0) uiTextGrew(n->id, at);
+  if (said.length() && screen == SCREEN_NOTE && uiOpenNoteId() == n->id) { uiSay(said.c_str()); return; }
   uiNotesChanged();
 }
 
@@ -191,7 +207,7 @@ static bool sendAudio(const String &path, int secs, const String &noteId) {
   if (!f) return false;
   size_t len = f.size();
   uint8_t *wav = (uint8_t *)heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
-  if (!wav) { f.close(); return true; }   // no memory now: try again later
+  if (!wav) { f.close(); lastFailAt = millis(); failures++; return true; }   // no memory now: try again in a while
   size_t got = f.read(wav, len);
   f.close();
   if (got != len) { free(wav); return true; }
@@ -221,7 +237,7 @@ void sttTick() {
   if (chat.asking) { sendChat(JOB_ASK, "", askBodyFor(chat.turns, true)); return; }
   for (auto &q : notesAll()) if (q.asking && !q.audio.length()) { sendChat(JOB_ASK, q.id, askBodyFor(chatTurnsOf(q.text), false)); return; }
   for (auto &q : notesAll()) if (q.tidying && !q.audio.length() && !q.asking) { sendChat(JOB_TIDY, q.id, tidyBodyFor(q.text)); return; }
-  for (auto &n : notesAll()) if (n.audio.length()) {
+  for (auto &n : notesAll()) if (n.audio.length() && !n.stuck.length()) {
     if (!sendAudio(n.audio, n.secs, n.id)) {
       Serial.printf("stt: %s is missing, dropping it\n", n.audio.c_str());
       n.audio = ""; n.text = n.text.length() ? n.text + "\n\n(recording lost)" : "(recording lost)"; notesSave(); uiNotesChanged();

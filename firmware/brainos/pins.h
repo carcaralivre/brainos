@@ -1,5 +1,5 @@
 // Seeed reTerminal Sticky (ESP32-S3R8, 32 MB flash, 3.97" 800x480 e-paper).
-// Pin map from Seeed's open-source examples; see docs/development.md for sources.
+// Pin map from Seeed's open-source examples (as collected by Sticky OS).
 #pragma once
 
 // Power latch: both must go high at boot or the board switches off on battery.

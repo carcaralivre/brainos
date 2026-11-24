@@ -3,9 +3,12 @@
 #include <esp_random.h>
 #include <algorithm>
 #include "provjson.h"
+#include "stt.h"
 
 static const char *FILE_NAME = "/notes.jsonl";
 static std::vector<Note, PsAlloc<Note>> items;
+static uint32_t version;
+uint32_t notesVersion() { return version; }
 
 std::vector<Note, PsAlloc<Note>> &notesAll() { return items; }
 
@@ -50,6 +53,23 @@ static String lineOf(const Note &n) {
   return s + "}";
 }
 
+// Recordings no note points to (a power cut while saving, a delete that was never undone) would
+// fill the flash a megabyte at a time: they go at start-up.
+static void sweepQueue() {
+  std::vector<String> stray;
+  File d = LittleFS.open("/queue");
+  if (!d) return;
+  for (File f = d.openNextFile(); f; f = d.openNextFile()) {
+    String name = f.name();
+    String path = "/queue/" + name.substring(name.lastIndexOf('/') + 1);
+    bool used = false;
+    for (auto &n : items) if (n.audio == path) used = true;
+    if (!used) stray.push_back(path);
+  }
+  d.close();
+  for (auto &p : stray) { LittleFS.remove(p); Serial.printf("notes: %s belonged to no note, removed\n", p.c_str()); }
+}
+
 void notesBegin() {
   items.clear();
   if (!LittleFS.exists("/queue")) LittleFS.mkdir("/queue");
@@ -65,6 +85,7 @@ void notesBegin() {
   }
   f.close();
   Serial.printf("notes: %u loaded%s\n", (unsigned)items.size(), bad ? " (some lines unreadable)" : "");
+  if (!bad) sweepQueue();
 }
 
 bool notesSave() {
@@ -82,6 +103,7 @@ bool notesSave() {
     return false;
   }
   LittleFS.rename("/notes.tmp", FILE_NAME);   // rename replaces the old file in one step: a power cut keeps one or the other
+  version++;
   return true;
 }
 
@@ -125,6 +147,15 @@ void notesRemove(const String &id, bool keepAudio) {
     }
 }
 
+void notesRemoveArchived() {
+  for (size_t i = items.size(); i-- > 0;)
+    if (items[i].archived) {
+      if (items[i].audio.length()) LittleFS.remove(items[i].audio);
+      items.erase(items.begin() + i);
+    }
+  notesSave();
+}
+
 int notesCount(bool archived) {
   int c = 0;
   for (auto &n : items) if (n.archived == archived) c++;
@@ -145,8 +176,11 @@ std::vector<int> notesSorted(int which, bool newestFirst) {
 }
 
 String notesWaitText(const Note &n) {
-  if (n.audio.length()) return String(n.asked ? "Question, " : "Recording, ") + n.secs + " s, waiting for Wi-Fi";
-  return n.asking ? "(asking…)" : n.tidying ? "(tidying…)" : "";
+  if (!n.busy()) return "";
+  String why = n.stuck.length() ? n.stuck : sttProblem();
+  if (n.audio.length()) return String(n.asked ? "Question, " : "Recording, ") + n.secs + " s, " + (why.length() ? why : String("sending"));
+  String what = n.asking ? "asking" : "tidying";
+  return why.length() ? "(" + what + ": " + why + ")" : "(" + what + "…)";
 }
 
 void notesFixClock(uint32_t bootTime) {

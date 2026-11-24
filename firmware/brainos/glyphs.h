@@ -30,7 +30,6 @@ int utf8Back(const char *s, int end);     // where the character before byte `en
 int utf8Count(const char *s);             // characters, not bytes
 void utf8Append(String &out, uint32_t cp);
 
-// Upper case for the letters the fonts have (Latin-1, Latin Extended-A,
-// comma-below, Cyrillic); `turkish`: i -> İ, ı -> I.
+// Upper case for the letters the fonts have (Latin-1, Latin Extended-A, comma-below).
 uint32_t cpUpper(uint32_t cp);
 

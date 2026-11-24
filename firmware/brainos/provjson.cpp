@@ -171,12 +171,6 @@ bool at(const Val &arr, size_t i, Val &out) {
   return found;
 }
 
-size_t size(const Val &c) {
-  size_t n = 0;
-  walk(c, [&](const Val &, const Val &) { n++; return true; });
-  return n;
-}
-
 
 static uint32_t hex4(const char *p) {
   char b[5] = {p[0], p[1], p[2], p[3], 0};

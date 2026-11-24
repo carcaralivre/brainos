@@ -11,7 +11,7 @@ static const char *why = "";
 const char *captureError() { return why; }
 
 // From Sticky OS: GPIO19/20 are the chip's USB pins, handed back to the pin matrix first.
-static size_t micRecord(bool (*keepGoing)(), int16_t **pcm) {
+static size_t micRecord(bool (*keepGoing)(), void (*atLimit)(), int16_t **pcm) {
   *pcm = nullptr;
   why = "";
   gpio_reset_pin((gpio_num_t)PIN_MIC_CLK);
@@ -37,6 +37,7 @@ static size_t micRecord(bool (*keepGoing)(), int16_t **pcm) {
   }
   i2s.end();
   digitalWrite(PIN_MIC_EN, LOW);
+  if (n >= maxSamples && atLimit) atLimit();
   if (!buf || !n) { why = buf ? "Too short" : "No memory to record"; free(buf); return 0; }
   int64_t sum = 0;
   for (size_t i = 0; i < n; i++) sum += buf[i];
@@ -64,9 +65,9 @@ static bool writeWav(const String &path, const int16_t *pcm, size_t n) {
   return ok;
 }
 
-int captureRecord(bool (*keepGoing)(), String &path, String &id) {
+int captureRecord(bool (*keepGoing)(), void (*atLimit)(), String &path, String &id) {
   int16_t *pcm;
-  size_t n = micRecord(keepGoing, &pcm);
+  size_t n = micRecord(keepGoing, atLimit, &pcm);
   if (n < (size_t)RATE / 2) { free(pcm); if (n || !*why) why = "Too short"; return 0; }   // under half a second
   id = notesNewId();
   path = "/queue/" + id + ".wav";

@@ -45,7 +45,7 @@ const char *foldCodePoint(uint32_t cp, char *two) {
   if (cp >= 0x100 && cp <= 0x17F) return two[0] = EXT[cp - 0x100], two;
   if (cp == 0x218 || cp == 0x21A) return cp == 0x218 ? "S" : "T";  // Romanian comma-below
   if (cp == 0x219 || cp == 0x21B) return cp == 0x219 ? "s" : "t";
-  if (cp == 0x2019 || cp == 0x02BC) return "'";
+  if (cp == 0x02BC) return "'";
   return nullptr;
 }
 
@@ -86,7 +86,7 @@ void utf8Append(String &out, uint32_t cp) {
 }
 
 uint32_t cpUpper(uint32_t cp) {
-  if (cp >= 'a' && cp <= 'z') return false && cp == 'i' ? 0x130 : cp - 32;
+  if (cp >= 'a' && cp <= 'z') return cp - 32;
   if (cp < 0x80) return cp;
   if (cp == 0x131) return 'I';                                        // dotless ı
   if (cp == 0xFF) return 0x178;                                       // ÿ
@@ -94,8 +94,6 @@ uint32_t cpUpper(uint32_t cp) {
   if ((cp >= 0x100 && cp <= 0x137) || (cp >= 0x14A && cp <= 0x177)) return cp & ~1u;  // pairs, capital even
   if ((cp >= 0x139 && cp <= 0x148) || (cp >= 0x179 && cp <= 0x17E)) return cp & 1 ? cp : cp - 1;  // capital odd
   if (cp == 0x219 || cp == 0x21B) return cp - 1;                      // ș ț
-  if (cp >= 0x430 && cp <= 0x44F) return cp - 0x20;                  // а..я
-  if (cp >= 0x450 && cp <= 0x45F) return cp - 0x50;                  // ѐ..џ
   return cp;
 }
 

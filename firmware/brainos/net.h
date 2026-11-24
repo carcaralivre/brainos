@@ -25,4 +25,5 @@ String netFailText(const char *who, int code);
 
 // HTTPS POST written by hand (the core's HTTPClient fails to send bodies on this board):
 // returns the HTTP status, or a negative HTTPC_ERROR_* code. `headers`: extra lines, each ending in \r\n.
-int netPost(const char *host, const char *path, const String &headers, const uint8_t *body, size_t len, String &reply, uint32_t timeoutMs);
+// `before` and `after` go around the body (a multipart form's parts), so a big body is sent where it lies.
+int netPost(const char *host, const char *path, const String &headers, const uint8_t *body, size_t len, String &reply, uint32_t timeoutMs, const String &before = "", const String &after = "");
