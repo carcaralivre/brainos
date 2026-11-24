@@ -46,14 +46,8 @@ String sttProblem() {
   if (failures && waitWhy.length()) return waitWhy + ", trying again";
   return "";
 }
-static String inflightOf(const String &path) { return path + ".i"; }
-
 void sttRetry() {   // the settings changed: what was refused gets another go
-  for (auto &n : notesAll()) {
-    n.stuck = "";
-    if (n.audio.length()) LittleFS.remove(inflightOf(n.audio));
-  }
-  if (chat.audio.length()) LittleFS.remove(inflightOf(chat.audio));
+  for (auto &n : notesAll()) n.stuck = "";
   failures = 0; waitWhy = "";
 }
 // A refusal that may pass (the key, the credit, a limit, a timeout) waits and tries again; any other 4xx is about the request itself.
@@ -196,8 +190,7 @@ static void apply() {
     n->asking = ok && n->asked;
     n->audio = ""; n->secs = 0; n->stuck = "";
   } else if (job.kind == JOB_STT) {
-    if (job.skip) n->stuck = job.error;
-    else LittleFS.remove(inflightOf(wav));   // a failure that may pass: send again
+    if (job.skip) n->stuck = job.error;   // the recording stays; a failure that may pass is sent again
   } else if (job.kind == JOB_ASK && n->asking && (ok || job.fatal)) {
     n->asking = false;
     at = n->text.length() + 2;
@@ -208,16 +201,8 @@ static void apply() {
     else said = "Tidy failed: " + job.error;
   }
   n->modified = time(nullptr);
-  if (!notesSave()) {
-    *n = before;
-    said = NOTES_SAVE_FAIL;
-    if (wav.length() && job.kind == JOB_STT && (ok || job.fatal)) LittleFS.remove(inflightOf(wav));
-  } else if (job.kind == JOB_STT && (ok || job.fatal) && wav.length()) {
-    LittleFS.remove(wav);
-    LittleFS.remove(inflightOf(wav));
-  } else if (job.kind == JOB_STT && job.skip && wav.length()) {
-    LittleFS.remove(inflightOf(wav));
-  }
+  if (!notesSave()) { *n = before; said = NOTES_SAVE_FAIL; }   // the note as it was, the recording kept: sent again
+  else if (job.kind == JOB_STT && (ok || job.fatal) && wav.length()) LittleFS.remove(wav);   // only once the text is saved
   if (at >= 0) uiTextGrew(n->id, at);
   if (said.length() && screen == SCREEN_NOTE && uiOpenNoteId() == n->id) { uiSay(said.c_str()); return; }
   if (said == NOTES_SAVE_FAIL) uiSay(NOTES_SAVE_FAIL);
@@ -233,8 +218,6 @@ static bool sendAudio(const String &path, int secs, const String &noteId) {
   size_t got = f.read(wav, len);
   f.close();
   if (got != len) { free(wav); return true; }
-  File mark = LittleFS.open(inflightOf(path), "w");
-  if (mark) mark.close();
   job.kind = JOB_STT; job.noteId = noteId; job.chatGen = chat.gen; job.wav = wav; job.len = len; job.secs = secs; job.req = "";
   job.state = 1;
   Serial.printf("stt: sending %s (%u bytes)\n", path.c_str(), (unsigned)len);
@@ -262,11 +245,6 @@ void sttTick() {
   for (auto &q : notesAll()) if (q.asking && !q.audio.length()) { sendChat(JOB_ASK, q.id, askBodyFor(chatTurnsOf(q.text), false)); return; }
   for (auto &q : notesAll()) if (q.tidying && !q.audio.length() && !q.asking) { sendChat(JOB_TIDY, q.id, tidyBodyFor(q.text)); return; }
   for (auto &n : notesAll()) if (n.audio.length() && !n.stuck.length()) {
-    if (LittleFS.exists(inflightOf(n.audio))) {
-      n.stuck = "Already sent once: Save settings to send again";
-      notesSave(); uiNotesChanged();
-      return;
-    }
     if (!sendAudio(n.audio, n.secs, n.id)) {
       Serial.printf("stt: %s is missing, dropping it\n", n.audio.c_str());
       n.audio = ""; n.text = n.text.length() ? n.text + "\n\n(recording lost)" : "(recording lost)"; notesSave(); uiNotesChanged();

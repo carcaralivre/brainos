@@ -66,15 +66,13 @@ static void sweepQueue() {
   for (File f = d.openNextFile(); f; f = d.openNextFile()) {
     String name = f.name();
     String path = "/queue/" + name.substring(name.lastIndexOf('/') + 1);
-    if (path.endsWith(".i")) continue;   // sidecar of a recording that was sent
     bool used = false;
     for (auto &n : items) if (n.audio == path) used = true;
     if (!used) stray.push_back(path);
   }
   d.close();
   for (auto &p : stray) {
-    LittleFS.remove(p);
-    LittleFS.remove(p + ".i");
+    LittleFS.remove(p);   // also the ".i" markers v0.8.0 to v0.8.8 left
     Serial.printf("notes: %s belonged to no note, removed\n", p.c_str());
   }
 }
@@ -155,7 +153,7 @@ bool notesRemove(const String &id, bool keepAudio) {
       Note kept = items[i];
       items.erase(items.begin() + i);
       if (!notesSave()) { items.insert(items.begin() + i, kept); return false; }
-      if (kept.audio.length() && !keepAudio) { LittleFS.remove(kept.audio); LittleFS.remove(kept.audio + ".i"); }
+      if (kept.audio.length() && !keepAudio) LittleFS.remove(kept.audio);
       return true;
     }
   return false;
@@ -171,7 +169,7 @@ bool notesRemoveArchived() {
   auto was = items;
   items = keep;
   if (!notesSave()) { items = was; return false; }
-  for (auto &p : audio) { LittleFS.remove(p); LittleFS.remove(p + ".i"); }
+  for (auto &p : audio) LittleFS.remove(p);
   return true;
 }
 

@@ -594,6 +594,9 @@ void uiSleeping(bool on) { asleep = on; }
 void uiTick() {
   static bool up; static String shown; static uint32_t shownAt;
   if (netUp() != up) { up = netUp(); if (screen == SCREEN_ABOUT || screen == SCREEN_SETTINGS || screen == SCREEN_WIFI) uiRender(false); }
+  static int pass = -1;   // About's password button follows the page: the window closing, a password made
+  int nowPass = webHasPassword() ? 2 : webSetupOpen() ? 1 : 0;
+  if (nowPass != pass) { pass = nowPass; if (screen == SCREEN_ABOUT) uiRender(false); }
   if (wifiMsg != shown) { shown = wifiMsg; shownAt = millis(); }
   if (wifiMsg.length() && millis() - shownAt > 5000) { wifiMsg = shown = ""; if (screen == SCREEN_WIFI) uiRender(false); }
 }
