@@ -75,12 +75,12 @@ static void iconMic(int cx, int cy) {       // big, for the listening screen
   canvas->fillRect(cx - 14, cy + 44, 28, 4, INK);
 }
 
-static void iconPadlock(int cx, int y) {   // 16 x 16, thin: above "N notes" while the board sleeps
-  canvas->drawRoundRect(cx - 4, y, 9, 12, 4, INK);       // the shackle
-  canvas->drawRoundRect(cx - 3, y + 1, 7, 10, 3, INK);
-  canvas->fillRect(cx - 7, y + 6, 15, 10, PAPER);
-  canvas->drawRoundRect(cx - 7, y + 6, 15, 10, 2, INK);  // the body
-  canvas->drawRoundRect(cx - 6, y + 7, 13, 8, 2, INK);
+static void iconPadlock(int cx, int y) {   // 12 x 16, thin: above "N notes" while the board sleeps
+  canvas->drawRoundRect(cx - 4, y, 8, 12, 4, INK);       // the shackle
+  canvas->drawRoundRect(cx - 3, y + 1, 6, 10, 3, INK);
+  canvas->fillRect(cx - 6, y + 6, 12, 10, PAPER);
+  canvas->drawRoundRect(cx - 6, y + 6, 12, 10, 2, INK);  // the body
+  canvas->drawRoundRect(cx - 5, y + 7, 10, 8, 2, INK);
 }
 static void dim(int x, int y, int w, int h) {   // grey on a 1-bit screen: every other pixel back to paper
   for (int j = y; j < y + h; j++) for (int i = x + ((j ^ x) & 1); i < x + w; i += 2) canvas->drawPixel(i, j, PAPER);

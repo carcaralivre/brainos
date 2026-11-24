@@ -70,12 +70,12 @@ static const char CSS[] PROGMEM =
   ".wrap{max-width:640px;margin:0 auto;padding:12px 12px 48px}"
   "header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--border);margin:0 -12px 12px;padding:0 12px;height:56px;display:flex;align-items:center;justify-content:space-between;gap:12px}"
   "h1{font-size:17px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
-  ".chips{display:flex;gap:10px;flex-wrap:wrap;font:11px/16px 'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--tertiary);margin:0 0 12px}.chip{white-space:nowrap}.chip.warn{color:var(--destructive)}"
+  ".chips{display:flex;justify-content:center;flex-wrap:wrap;font:11px/16px 'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--tertiary);margin:0 0 12px}.chip{white-space:nowrap}.chip+.chip:before{content:'\\00b7';margin:0 8px;color:var(--tertiary)}.chip.warn{color:var(--destructive)}"
   ".card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;margin:0 0 12px;box-shadow:0 1px 2px rgba(0,0,0,.05)}"
   "h2{font:500 11px/16px Geist,-apple-system,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--tertiary);margin:0 0 12px}"
   ".note{padding:12px 0;border-top:1px solid var(--border)}.note.first{border-top:0;padding-top:0}"
   ".note p{margin:0 0 6px;white-space:pre-wrap;font-size:14px;line-height:20px}.meta{font:11px/16px 'Geist Mono',ui-monospace,Menlo,monospace;color:var(--tertiary);margin:0 0 8px}"
-  ".row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}form{display:inline}form.b{display:block}"
+  ".row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}form{display:inline}form.b{display:block}.edit{margin-top:8px}[hidden]{display:none!important}"
   "button,input[type=submit],.btn{font:500 14px/20px Geist,-apple-system,sans-serif;padding:0 12px;height:36px;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--fg);text-decoration:none;display:inline-flex;align-items:center;cursor:pointer;transition:background-color .1s,color .1s,border-color .1s}"
   "button:hover,.btn:hover{background:var(--accent)}.o,input.o{border-color:var(--border)}.p,input.p{background:var(--primary);color:#fff}.p:hover,input.p:hover{background:#1a1917}.d{color:var(--destructive)}.destructive{background:var(--destructive);color:#fff;border-color:var(--destructive)}.destructive:hover{background:var(--destructive)}"
   ".w{width:100%;justify-content:center}"
@@ -97,6 +97,7 @@ static const char CSS[] PROGMEM =
 static const char JS[] PROGMEM =
   "document.addEventListener('click',function(e){var b=e.target.closest('button[data-arm]');"
   "document.querySelectorAll('button[data-armed]').forEach(function(o){if(o!==b){delete o.dataset.armed;o.textContent=o.dataset.label;o.classList.remove('destructive')}});"
+  "var t=e.target.closest('button[data-edit]');if(t){var f=t.closest('.note').querySelector('.edit');f.hidden=!f.hidden;if(!f.hidden)f.querySelector('textarea').focus();return}"
   "if(!b)return;if(b.dataset.armed)return;e.preventDefault();"
   "b.dataset.armed='1';b.dataset.label=b.textContent;b.textContent=b.dataset.arm;b.classList.add('destructive');"
   "setTimeout(function(){delete b.dataset.armed;b.textContent=b.dataset.label;b.classList.remove('destructive')},3000)});";
@@ -120,21 +121,23 @@ static String option(const String &value, const String &label, const String &cur
 
 static void noteCard(Out &p, const Note &n, bool first, const char *back) {
   p += "<div class='note" + String(first ? " first" : "") + "'>";
+  p += "<div class='meta'>" + when(n.created) + " · " + costText(n.cost) + (n.pinned ? " · pinned" : "") + (n.asked ? " · chat" : "") + (n.orig.length() ? " · tidied" : "") + "</div>";
   if (n.text.length()) p += "<p>" + html(n.text) + "</p>";
   String wait = notesWaitText(n);   // the same words as on the board
   if (wait.length()) p += "<p class='pend'>" + html(wait) + "</p>";
-  p += "<div class='meta'>" + when(n.created) + " · " + costText(n.cost) + (n.pinned ? " · pinned" : "") + (n.asked ? " · chat" : "") + (n.orig.length() ? " · tidied" : "") + "</div>";
   p += "<div class='row'><form method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='back' value='" + back + "'>";
-  if (n.archived) p += "<button name='do' value='restore'>Restore</button>";
+  if (n.archived) p += "<button class='o' name='do' value='restore'>Restore</button>";
   else {
-    p += "<button name='do' value='pin'>" + String(n.pinned ? "Unpin" : "Pin") + "</button>";
-    if (!n.busy()) p += "<button name='do' value='archive'>Archive</button>";
-    if (n.asking || n.tidying) p += "<button name='do' value='cancel'>Cancel</button>";   // the same third button as on the board
-    else if (!n.busy() && n.orig.length()) p += "<button name='do' value='original'>Original</button>";
-    else if (!n.busy() && n.text.length() && !n.asked) p += "<button name='do' value='tidy'>Tidy</button>";
+    p += "<button class='o' name='do' value='pin'>" + String(n.pinned ? "Unpin" : "Pin") + "</button>";
+    if (!n.busy()) p += "<button class='o' name='do' value='archive'>Archive</button>";
+    if (n.asking || n.tidying) p += "<button class='o' name='do' value='cancel'>Cancel</button>";   // the same third button as on the board
+    else if (!n.busy() && n.orig.length()) p += "<button class='o' name='do' value='original'>Original</button>";
+    else if (!n.busy() && n.text.length() && !n.asked) p += "<button class='o' name='do' value='tidy'>Tidy</button>";
   }
-  p += "<button class='d' name='do' value='delete' data-arm='Yes, delete'>Delete</button></form></div>";
-  if (!n.archived && !n.busy()) p += "<details><summary>Edit</summary><form class='b' method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text' aria-label='Edit note' maxlength='" + String(KB_NOTE_MAX) + "'>" + html(n.text) + "</textarea><p></p><input class='o' type='submit' value='Save'></form></details>";
+  bool canEdit = !n.archived && !n.busy();
+  if (canEdit) p += "<button type='button' class='o' data-edit>Edit</button>";   // opens the box under the row
+  p += "<button class='o d' name='do' value='delete' data-arm='Yes, delete'>Delete</button></form></div>";
+  if (canEdit) p += "<form class='b edit' hidden method='post' action='/note'><input type='hidden' name='id' value='" + n.id + "'><input type='hidden' name='do' value='edit'><textarea name='text' aria-label='Edit note' maxlength='" + String(KB_NOTE_MAX) + "'>" + html(n.text) + "</textarea><p></p><input class='o' type='submit' value='Save'></form>";
   p += "</div>";
 }
 
@@ -158,7 +161,7 @@ static const size_t PAGE_NOTES = 50;   // the newest notes on the page; "Show al
 static String stateNow() { return String(notesVersion()) + "." + sttProblem().length() + "." + notesPending(); }
 static const char RELOAD[] PROGMEM =
   "setInterval(function(){var a=document.activeElement;if(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))return;"
-  "if(document.querySelector('details[open],button[data-armed]'))return;"
+  "if(document.querySelector('details[open],.edit:not([hidden]),button[data-armed]'))return;"
   "fetch('/state').then(function(r){return r.ok?r.text():V}).then(function(t){if(t!==V)location.reload()}).catch(function(){})},5000)</script>";
 
 static void sendPage(const String &msg) {
@@ -214,7 +217,7 @@ static void sendPage(const String &msg) {
   for (const char *m : MODELS) { p += option(m, m, model); known |= model == m; }
   if (!known) p += option(model, model, model);
   p += "</select>";
-  p += "<label for='prompt'>Transcription style: how to write, and names or words it should know (a hint, best with an example)</label><textarea id='prompt' name='prompt' placeholder='Tudo em minúsculas, sem ponto final. Nomes: BrainOS, Olívia. Exemplo: comprar café e leite'>" + html(cfg::str("stt.prompt")) + "</textarea>";
+  p += "<label for='prompt'>Transcription style: how to write, and names or words it should know (a hint, best with an example)</label><textarea id='prompt' name='prompt' placeholder='Tudo em minúsculas, sem ponto final. Nomes: BrainOS, Ana. Exemplo: comprar café e leite'>" + html(cfg::str("stt.prompt")) + "</textarea>";
   String ask = cfg::str("ask.model");
   p += "<label for='askmodel'>Assistant model (hold Up to record a question; the answer goes into the note)</label><select id='askmodel' name='askmodel'>";
   known = false;
